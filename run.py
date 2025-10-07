@@ -1,7 +1,7 @@
-# DABUNA – חדשות + מדד (Weekly) + Miniapp
+# DABUNA – חדשות + מדד (Weekly) + Miniapp — FULL
 from __future__ import annotations
 import os, re, csv, json, time, html, datetime
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs, urlunparse
 from zoneinfo import ZoneInfo
 import requests, yaml, feedparser
 from bs4 import BeautifulSoup
@@ -32,6 +32,9 @@ def write_json(path: str, data):
 def load_cfg():
     with open("config.yaml", "r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
+
+def is_hebrew(text: str) -> bool:
+    return bool(re.search(r"[\u0590-\u05FF]", text or ""))
 
 # ---------- Telegram ----------
 def tg_send(token, chat_id, html_text, buttons=None):
@@ -86,6 +89,39 @@ def tg_send(token, chat_id, html_text, buttons=None):
             break
     return last_resp
 
+# ---------- URL normalize & keys ----------
+_SKIP_QS = {"utm_source","utm_medium","utm_campaign","utm_term","utm_content",
+            "utm_name","gclid","fbclid","igshid","mc_cid","mc_eid","ref"}
+
+def normalize_url(u: str) -> str:
+    """
+    מסיר פרמטרים שיווקיים ומאחד כתובת ל-key יציב למניעת כפילויות.
+    """
+    try:
+        p = urlparse(u)
+        q = parse_qs(p.query, keep_blank_values=False)
+        q = {k:v for k,v in q.items() if k not in _SKIP_QS}
+        query = "&".join(f"{k}={v[0]}" for k,v in sorted(q.items()) if v)
+        # בלי fragment
+        p2 = p._replace(query=query, fragment="")
+        # סיום "/" מיותר
+        normalized = urlunparse(p2)
+        if normalized.endswith("/"):
+            normalized = normalized[:-1]
+        return normalized
+    except Exception:
+        return u or ""
+
+def url_key(u: str) -> str:
+    try:
+        n = normalize_url(u)
+        p = urlparse(n)
+        base = (p.netloc or "").lower()
+        path = (p.path or "").rstrip("/")
+        return f"{base}{path}"
+    except Exception:
+        return u or ""
+
 # ---------- Sources / ingest ----------
 def clean_html(html_text: str) -> str:
     soup = BeautifulSoup(html_text or "", "html.parser")
@@ -110,18 +146,6 @@ def load_sources(whitelist_yaml: str):
     except FileNotFoundError:
         return {"rss": ["https://www.ynet.co.il/Integration/StoryRss2.xml"],
                 "domains_official": ["ynet.co.il"]}
-
-def is_hebrew(text: str) -> bool:
-    return bool(re.search(r"[\u0590-\u05FF]", text or ""))
-
-def url_key(u: str) -> str:
-    try:
-        p = urlparse(u)
-        base = (p.netloc or "").lower()
-        path = (p.path or "").rstrip("/")
-        return f"{base}{path}"
-    except Exception:
-        return u
 
 def translate_to_he(cfg, text: str) -> str:
     if not text or is_hebrew(text):
@@ -156,47 +180,81 @@ def ingest_items(cfg) -> list[dict]:
                 html_page = fetch_text(url)
                 text = clean_html(html_page) if html_page else summary
                 items.append({
-                    "url": url, "title": title, "summary": summary,
-                    "text": text, "source": urlparse(url).netloc, "feed": feed_url
+                    "url": normalize_url(url),  # normalized
+                    "title": title,
+                    "summary": summary,
+                    "text": text,
+                    "source": urlparse(url).netloc,
+                    "feed": feed_url
                 })
         except Exception as ex:
             print("RSS error:", feed_url, ex)
     print(f"[DABUNA] fetched {len(items)} raw items")
     return items
 
+# ---------- Filtering, translation & anti-duplicates ----------
+def _tokens(s: str) -> set[str]:
+    s = (s or "").lower()
+    s = re.sub(r"[^a-z\u0590-\u05FF0-9 ]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return set(s.split()) if s else set()
+
+def similar(a: str, b: str) -> float:
+    """
+    דמיון פשוט בין כותרות — Jaccard על טוקנים. 1.0 זה זהות מלאה.
+    """
+    A, B = _tokens(a), _tokens(b)
+    if not A or not B: return 0.0
+    inter = len(A & B); union = len(A | B)
+    return inter / max(1, union)
+
 def filter_and_translate(cfg, items: list[dict]) -> list[dict]:
     out = []
     min_title_len = int((cfg.get("filters") or {}).get("min_title_len", 16))
-    require_hebrew = bool((cfg.get("filters") or {}).get("require_hebrew", False))
     tcfg = cfg.get("translate", {})
     translate_limit = int(tcfg.get("max_per_run", 0))
     translated_count = 0
 
-    for it in items:
-        title = it.get("title") or ""
-        summary = it.get("summary") or ""
-        text = it.get("text") or ""
+    # זיכרון נגד כפילויות לפי כתובת/כותרת דומה
+    seen_keys = set()
+    kept_titles: list[str] = []
 
-        if len(title.strip()) < min_title_len:
+    for it in items:
+        title = (it.get("title") or "").strip()
+        summary = (it.get("summary") or "").strip()
+        text = (it.get("text") or "").strip()
+        url = it.get("url") or ""
+
+        if len(title) < min_title_len:
             continue
 
-        if require_hebrew and not (is_hebrew(title) or is_hebrew(summary) or is_hebrew(text)):
+        # נגד כפילות URL
+        k = url_key(url)
+        if k in seen_keys:
+            continue
+
+        # נגד כפילות כותרות (כתבות דומות בין אתרים)
+        is_dup_title = False
+        for prev in kept_titles:
+            if similar(prev, title) >= 0.80:  # סף דמיון
+                is_dup_title = True
+                break
+        if is_dup_title:
+            continue
+
+        # תרגום: אם לא עברית — תרגם (עד המגבלה)
+        if not (is_hebrew(title) or is_hebrew(summary) or is_hebrew(text)):
             if tcfg.get("enabled", False) and translated_count < translate_limit:
                 title = translate_to_he(cfg, title[:240])
-                summary = translate_to_he(cfg, summary[:500])
+                summary = translate_to_he(cfg, summary[:600])
                 translated_count += 1
-            else:
-                continue
-        else:
-            if tcfg.get("enabled", False) and translated_count < translate_limit:
-                if not (is_hebrew(title) or is_hebrew(summary)):
-                    title = translate_to_he(cfg, title[:240])
-                    summary = translate_to_he(cfg, summary[:500])
-                    translated_count += 1
 
         it["title"] = title
         it["summary"] = summary
+
         out.append(it)
+        seen_keys.add(k)
+        kept_titles.append(title)
 
     print(f"[DABUNA] kept {len(out)} items (translated {translated_count})")
     return out
@@ -228,12 +286,15 @@ def post_news_items(cfg, token, items: list[dict]):
         summary = (it["summary"] or it["text"] or "")[:220]
         source = it["source"]
 
+        # UX: האשטגים בסיסיים
+        tags = "#דבונה #חדשות #ישראל #כנסת"
+
         msg = (
             f"🗞️ <b>{safe(title)}</b>\n"
             f"TL;DR: {safe(summary)}\n\n"
             f"מקור: {safe(source)}\n"
             f"🔗 {it['url']}\n"
-            f"#דבונה #חדשות #ישראל #כנסת"
+            f"{tags}"
         )
         buttons = [
             [{"text": "📊 מדד", "url": web.get("dashboard_url", "")}],
@@ -257,6 +318,7 @@ def load_people(csv_path="data/politicians.csv"):
     with open(csv_path, "r", encoding="utf-8") as f:
         for row in csv.DictReader(f):
             aliases = [a.strip() for a in (row.get("aliases","") or "").split(";") if a.strip()]
+            # שם בעברית כ-name, aliases מכיל גם אנגלית וגם עברית
             ppl.append({
                 "id": row["id"], "name": row["name"], "party": row["party"],
                 "role": row["role"], "aliases": [row["name"].strip(), *aliases]
@@ -389,8 +451,7 @@ def cmd_miniapp(cfg, token):
 
 def cmd_tick(cfg, token):
     t = now_il()
-    hhmm = t.strftime("%H:%M")
-    weekday = t.weekday()  # Monday=0 ... Sunday=6
+    hhmm = t.strftime("%H:%M"); weekday = t.weekday()
     if hhmm == "18:00":
         cmd_daily(cfg, token)
     if weekday == 4 and hhmm == "14:00":
