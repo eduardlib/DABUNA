@@ -3,8 +3,8 @@ channels:
   rating: "@DabunaRating"
 
 web:
-  dashboard_url: "https://eduardlibon.github.io/DabunaNewsBot/"
-  share_url: "https://t.me/DabunaNews"
+dashboard_url: "https://eduardlib.github.io/DABUNA/"
+  share_url: "https://t.me/share/url?url=https://eduardlib.github.io/DABUNA/"
 
 publish:
   max_per_run: 18
