@@ -1,0 +1,175 @@
+name: Apply Dabuna Patch
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write patch file
+        run: |
+          cat > dabuna_patch.diff << 'PATCH'
+--- a/DabunaNewsBot-main/run.py
++++ b/DabunaNewsBot-main/run.py
+@@ -34,7 +34,8 @@
+         return yaml.safe_load(f) or {}
+ 
+ # ---------- Telegram ----------
+-def tg_send(token: str, chat_id: str, html_text: str, buttons: list[list[dict]] | None = None):
++def tg_send(token, chat_id, html_text, buttons=None):
++    CHUNK_LIMIT = 3900  # keep under Telegram 4096
+     payload = {
+         "chat_id": chat_id,
+         "text": html_text,
+@@ -44,8 +45,27 @@
+     if buttons:
+         payload["reply_markup"] = {"inline_keyboard": buttons}
+ 
++# Split long messages into chunks (respect HTML boundaries roughly)
++chunks = []
++txt = html_text
++while len(txt) > CHUNK_LIMIT:
++    cut = txt.rfind("\n", 0, CHUNK_LIMIT)  # prefer newline
++    if cut < CHUNK_LIMIT//2:
++        cut = CHUNK_LIMIT
++    chunks.append(txt[:cut])
++    txt = txt[cut:]
++chunks.append(txt)
++
++resp = None
++for i, part in enumerate(chunks):
++    payload["text"] = part
++    # Only attach buttons on the last chunk
++    if i < len(chunks)-1 and "reply_markup" in payload:
++        payload.pop("reply_markup", None)
++
+     while True:
+         r = requests.post(
++
+             f"https://api.telegram.org/bot{token}/sendMessage",
+             headers={"Content-Type": "application/json"},
+             data=json.dumps(payload),
+@@ -60,7 +80,14 @@
+             continue
+         if not r.ok:
+             raise RuntimeError(f"Telegram API error: {r.status_code} {r.text}")
+-        return r.json()
++                resp = r.json()
++                break
++            
++            # Re-attach buttons for next round
++            if buttons:
++                payload["reply_markup"] = {"inline_keyboard": buttons}
++        
++        return resp
+ 
+ # ---------- Sources / ingest ----------
+ def clean_html(html_text: str) -> str:
+@@ -218,7 +245,7 @@
+             f"#דבונה #חדשות #ישראל #כנסת"
+         )
+         buttons = [
+-            [{"text": "📊 דשבורד", "url": web.get("dashboard_url", "")}],
++            [{"text": "📊 מדד", "url": web.get("dashboard_url", "")}],
+             [{"text": "🔗 שתפו", "url": web.get("share_url", "")}],
+         ]
+         try:
+@@ -323,7 +350,7 @@
+         )
+     lines.append("#דבונה #מדד_דבונה #FactCheck #ישראל #כנסת")
+     buttons = [
+-        [{"text": "📊 דשבורד", "url": (cfg.get('web') or {}).get('dashboard_url', '')}],
++        [{"text": "📊 מדד", "url": (cfg.get('web') or {}).get('dashboard_url', '')}],
+         [{"text": "🔗 שתפו", "url": (cfg.get('web') or {}).get('share_url', '')}],
+     ]
+     tg_send(token, dest, "\n".join(lines), buttons)
+@@ -344,18 +371,43 @@
+     write_json(os.path.join(storage_dir, f"daily_scores_{now_il().date()}.json"), rows)
+     write_json(os.path.join(storage_dir, "latest_scores.json"),
+                {"date": now_il().isoformat(), "rows": rows})
+-
++    print("[DABUNA] daily finished.")
++
++
++def cmd_weekly(cfg, token):
++    # Prefer using last computed scores from storage; if missing, compute now
++    storage_dir = cfg.get("storage_dir", "storage")
++    latest = read_json(os.path.join(storage_dir, "latest_scores.json"), {})
++    rows = latest.get("rows") or []
++    if not rows:
++        items_all = ingest_items(cfg)
++        items = filter_and_translate(cfg, items_all)
++        rows = compute_rows(items)
+     post_daily_index(cfg, token, rows)
+-    print("[DABUNA] daily finished.")
++    print("[DABUNA] weekly index posted.")
++
+ 
+ def cmd_tick(cfg, token):
+-    cmd_daily(cfg, token)
++    t = now_il()
++    hhmm = t.strftime("%H:%M")
++    weekday = t.weekday()  # Monday=0 ... Sunday=6
++
++    # Daily at 18:00 Asia/Jerusalem
++    if hhmm == "18:00":
++        cmd_daily(cfg, token)
++
++    # Weekly on Friday (4) at 14:00 Asia/Jerusalem
++    if weekday == 4 and hhmm == "14:00":
++        cmd_weekly(cfg, token)
++
++    print(f"[DABUNA] tick {hhmm} – nothing else to do.")
+ 
+ # ---------- main ----------
++
+ if __name__ == "__main__":
+     import argparse
+     parser = argparse.ArgumentParser()
+-    parser.add_argument("cmd", choices=["daily","tick"])
++    parser.add_argument("cmd", nargs="?", choices=["daily","weekly","tick"], default="tick")
+     args = parser.parse_args()
+ 
+     cfg = load_cfg()
+@@ -365,5 +417,7 @@
+ 
+     if args.cmd == "daily":
+         cmd_daily(cfg, token)
++    elif args.cmd == "weekly":
++        cmd_weekly(cfg, token)
+     else:
+         cmd_tick(cfg, token)
+--- a/DabunaNewsBot-main/.github/workflows/daily_manual.yml
++++ b/DabunaNewsBot-main/.github/workflows/daily_manual.yml
+@@ -1,7 +1,7 @@
+ name: Dabuna Daily
+ on:
+   schedule:
+-    - cron: "0 5 * * *"     # 08:00 IL בקירוב (תלוי DST)
++    - cron: "0 15 * * *"     # 08:00 IL בקירוב (תלוי DST)
+   workflow_dispatch: {}
+ 
+ permissions:
+--- a/DabunaNewsBot-main/.github/workflows/weekly_manual.yml
++++ b/DabunaNewsBot-main/.github/workflows/weekly_manual.yml
+@@ -1,5 +1,7 @@
+ name: Weekly (manual)
+ on:
++  schedule:
++    - cron: "0 11 * * 5"
+   workflow_dispatch: {}
+ permissions:
+   contents: write
+PATCH
+
+      - name: Apply patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git apply --whitespace=fix dabuna_patch.diff
+          git add -A
+          git commit -m "Apply Dabuna patch (weekly cmd, time-gated tick, rename דשבורד→מדד, Telegram chunking, cron fixes)"
+          git push

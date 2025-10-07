@@ -1,0 +1,74 @@
+name: Dabuna Tick (hourly)
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # every hour UTC
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force publish now (ignore time checks)'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dabuna-tick-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for safe rebase)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Tick
+        run: python run.py tick
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          FORCE_POST: ${{ github.event.inputs.force == 'true' && '1' || '0' }}
+
+      - name: Save storage (safe rebase + retry push)
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A storage || true
+
+          if ! git diff --cached --quiet; then
+            git commit -m "storage $(date -u +%F-%H%M)"
+          else
+            echo "no storage changes to commit"
+          fi
+
+          git fetch origin main
+          git pull --rebase --autostash origin main || true
+
+          for i in 1 2 3; do
+            if git push origin HEAD:main; then
+              echo "Pushed successfully on attempt $i"
+              exit 0
+            fi
+            echo "Push failed (attempt $i). Rebasing and retrying..."
+            git pull --rebase --autostash origin main || true
+            sleep $((i*3))
+          done
+
+          echo "Push failed after retries."
+          exit 1

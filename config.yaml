@@ -1,0 +1,26 @@
+channels:
+  news: "@DabunaNews"
+  rating: "@DabunaRating"
+
+web:
+  dashboard_url: "https://eduardlibon.github.io/DabunaNewsBot/"
+  share_url: "https://t.me/DabunaNews"
+
+publish:
+  max_per_run: 18
+  sleep_seconds: 30
+  allow_duplicates: false
+
+translate:
+  enabled: true
+  max_per_run: 12
+  service_url: "https://translate.astian.org/translate"
+
+filters:
+  min_title_len: 18
+  require_hebrew: false
+
+sources:
+  whitelist_file: "data/sources_whitelist.yaml"
+
+storage_dir: "storage"

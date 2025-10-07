@@ -1,0 +1,37 @@
+name: Dabuna Daily
+on:
+  schedule:
+    - cron: "0 15 * * *"     # 08:00 IL בקירוב (תלוי DST)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install -r requirements.txt
+
+      - name: Daily
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: python run.py daily
+
+      - name: Commit storage & push (rebase-safe)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin
+          git pull --rebase origin main || true
+          git add -A storage || true
+          git commit -m "daily storage $(date -u +%F)" || echo "no changes"
+          git push origin HEAD:main

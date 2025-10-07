@@ -1,0 +1,132 @@
+[
+  {
+    "id": "POL_GALLANT",
+    "name": "יואב גלנט",
+    "party": "הליכוד",
+    "role": "שר הביטחון",
+    "Consistency": 100.0,
+    "FactIntegrity": 65.0,
+    "Transparency": 100.0,
+    "CorrectionResponsiveness": 0.0,
+    "IndexScore": 77.75,
+    "headlines": [
+      "שנתיים לטבח והמחדל: ראש השב\"כ ושר הביטחון פוטרו, הרמטכ\"ל הוחלף, בכירים פרשו - ומי נותרו בתפקיד?"
+    ]
+  },
+  {
+    "id": "POL_BEN_GVIR",
+    "name": "איתמר בן־גביר",
+    "party": "עוצמה יהודית",
+    "role": "שר לביטחון לאומי",
+    "Consistency": 100.0,
+    "FactIntegrity": 65.0,
+    "Transparency": 100.0,
+    "CorrectionResponsiveness": 0.0,
+    "IndexScore": 77.75,
+    "headlines": [
+      "פעילי המשט לעזה טוענים: בן גביר נכנס אלינו באמצע הלילה - וצעק עלינו"
+    ]
+  },
+  {
+    "id": "POL_TIBI",
+    "name": "אחמד טיבי",
+    "party": "תע\\\"ל",
+    "role": "ח\\\"כ",
+    "Consistency": 100.0,
+    "FactIntegrity": 65.0,
+    "Transparency": 100.0,
+    "CorrectionResponsiveness": 0.0,
+    "IndexScore": 77.75,
+    "headlines": [
+      "הכאב אמיתי, הזיכרון דיגיטלי: חברות טכנולוגיה בישראל סייעו להקים ארכיון דיגיטלי לטבח 7 באוקטובר"
+    ]
+  },
+  {
+    "id": "POL_BENNETT",
+    "name": "נפתלי בנט",
+    "party": "ימינה",
+    "role": "רה\\\"מ לשעבר",
+    "Consistency": 100.0,
+    "FactIntegrity": 65.0,
+    "Transparency": 100.0,
+    "CorrectionResponsiveness": 0.0,
+    "IndexScore": 77.75,
+    "headlines": [
+      "רוקמים תוכניות? בנט ולפיד נפגשו לתיאום האופוזיציה"
+    ]
+  },
+  {
+    "id": "POL_LIBERMAN",
+    "name": "אביגדור ליברמן",
+    "party": "ישראל ביתנו",
+    "role": "יו\\\"ר המפלגה",
+    "Consistency": 100.0,
+    "FactIntegrity": 59.57381099444101,
+    "Transparency": 100.0,
+    "CorrectionResponsiveness": 0.0,
+    "IndexScore": 75.85083384805435,
+    "headlines": [
+      "\"אם נותנים לי קדנציה שלמה, אני יודע להפוך את ישראל לבטוחה יותר משווייץ\""
+    ]
+  },
+  {
+    "id": "POL_DERI",
+    "name": "אריה דרעי",
+    "party": "ש\\\"ס",
+    "role": "יו\\\"ר המפלגה",
+    "Consistency": 100.0,
+    "FactIntegrity": 59.57381099444101,
+    "Transparency": 100.0,
+    "CorrectionResponsiveness": 0.0,
+    "IndexScore": 75.85083384805435,
+    "headlines": [
+      "\"אם נותנים לי קדנציה שלמה, אני יודע להפוך את ישראל לבטוחה יותר משווייץ\""
+    ]
+  },
+  {
+    "id": "POL_PM_NETANYAHU",
+    "name": "בנימין נתניהו",
+    "party": "הליכוד",
+    "role": "ראש הממשלה",
+    "Consistency": 60.0,
+    "FactIntegrity": 100.0,
+    "Transparency": 100.0,
+    "CorrectionResponsiveness": 0.0,
+    "IndexScore": 72.0,
+    "headlines": [
+      "נתניהו טעה במספר החטופים, פעמיים: \"נחזיר את ה-40, למעשה 46\" | כך הגיבו במטה המשפחות",
+      "\"אם נותנים לי קדנציה שלמה, אני יודע להפוך את ישראל לבטוחה יותר משווייץ\"",
+      "השנתיים הארוכות ביותר"
+    ]
+  },
+  {
+    "id": "POL_REGEV",
+    "name": "מירי רגב",
+    "party": "הליכוד",
+    "role": "שרה",
+    "Consistency": 70.0,
+    "FactIntegrity": 80.0,
+    "Transparency": 100.0,
+    "CorrectionResponsiveness": 0.0,
+    "IndexScore": 69.5,
+    "headlines": [
+      "הזיכרון של אור לוי שלא מרפה: \"חי את הרגעים האחרונים איתך, לנצח תהיי בת 32\"",
+      "\"חשבתי שאבא ישמע אותם רוצחים אותי\": מיה רגב משחזרת את רגעי האימה"
+    ]
+  },
+  {
+    "id": "POL_OPP_LAPID",
+    "name": "יאיר לפיד",
+    "party": "יש עתיד",
+    "role": "יו\\\"ר האופוזיציה",
+    "Consistency": 60.0,
+    "FactIntegrity": 65.0,
+    "Transparency": 100.0,
+    "CorrectionResponsiveness": 0.0,
+    "IndexScore": 59.75,
+    "headlines": [
+      "צעדת היובל לשומרון – חוגגים 50 שנה להתיישבות היהודית",
+      "רוקמים תוכניות? בנט ולפיד נפגשו לתיאום האופוזיציה"
+    ]
+  }
+]

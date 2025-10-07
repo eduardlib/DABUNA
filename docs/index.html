@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>DABUNA – מדד אמינות ועקביות (חי)</title>
+<link href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/css/tabler.min.css" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  body{background:#0f172a;color:#e2e8f0}
+  .card{background:#111827;border:1px solid #1f2937}
+  a{color:#60a5fa}
+  .badge{font-size:.75rem}
+  .grid{display:grid;grid-template-columns:1fr 380px;gap:16px}
+  @media(max-width:1000px){.grid{grid-template-columns:1fr}}
+  .table td,.table th{vertical-align:middle;border-color:#1f2937}
+  .muted{color:#94a3b8}
+</style>
+</head>
+<body class="container-xl py-4">
+
+<h2 class="mb-3">מדד אמינות ועקביות (חי)</h2>
+<div class="muted mb-3"><span id="meta">מתעדכן…</span></div>
+
+<div class="grid">
+  <!-- גרף TOP10 -->
+  <div class="card p-3">
+    <canvas id="chartTop"></canvas>
+    <div class="mt-2 muted" style="font-size:.85rem">לחיצה על שם בטבלה תצייר לו גרף מגמה (כאשר ייאסף היסטוריית ימים).</div>
+  </div>
+
+  <!-- טבלת פוליטיקאים -->
+  <div class="card p-3">
+    <input id="q" class="form-control mb-2" placeholder="חיפוש לפי שם/מפלגה/תפקיד…">
+    <div style="max-height:70vh;overflow:auto">
+      <table class="table table-hover">
+        <thead>
+          <tr>
+            <th style="width:60px">Index</th>
+            <th>שם</th>
+            <th>מפלגה</th>
+            <th>תפקיד</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<hr class="my-4">
+
+<div class="d-flex gap-2">
+  <a class="btn btn-primary" href="https://t.me/DabunaNews" target="_blank">🔔 ערוץ החדשות</a>
+  <a class="btn btn-secondary" href="https://t.me/DabunaRating" target="_blank">📊 ערוץ המדד</a>
+  <a class="btn btn-outline-light" id="btnShare" target="_blank">🔗 שתפו</a>
+</div>
+
+<script>
+const URL_LATEST_SCORES = "../storage/latest_scores.json";   // נתוני המדד (חי)
+const URL_HISTORY = "../storage/history_scores.json";        // אופציונלי – אם יצטבר
+
+let SCORES = {date:null, rows:[]};
+let HISTORY = [];
+let chartTop = null;
+
+function fmt(n){return Math.round(n) || 0}
+function setShareLink(){
+  const u = location.href;
+  const t = encodeURIComponent("מדד אמינות ועקביות – DABUNA");
+  document.getElementById('btnShare').href =
+    `https://t.me/share/url?url=${encodeURIComponent(u)}&text=${t}`;
+}
+
+function drawTop10(rows){
+  const top = [...rows].sort((a,b)=>b.IndexScore-a.IndexScore).slice(0,10);
+  const labels = top.map(r=>r.name);
+  const data = top.map(r=>fmt(r.IndexScore));
+  const ctx = document.getElementById('chartTop').getContext('2d');
+  if(chartTop) chartTop.destroy();
+  chartTop = new Chart(ctx,{
+    type:'bar',
+    data:{labels,datasets:[{label:'Index',data}]},
+    options:{
+      responsive:true,
+      scales:{y:{beginAtZero:true,max:100,ticks:{color:'#cbd5e1'}},x:{ticks:{color:'#cbd5e1'}}},
+      plugins:{legend:{labels:{color:'#cbd5e1'}}}
+    }
+  });
+}
+
+function buildTable(rows){
+  const tb = document.getElementById('rows');
+  tb.innerHTML = "";
+  for(const r of rows){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><span class="badge bg-primary">${fmt(r.IndexScore)}</span></td>
+      <td><a href="#" data-id="${r.id}" class="lnk-person">${escapeHtml(r.name)}</a></td>
+      <td>${escapeHtml(r.party||"")}</td>
+      <td>${escapeHtml(r.role||"")}</td>`;
+    tb.appendChild(tr);
+  }
+  // future: draw person trend when we’ll have HISTORY
+  tb.querySelectorAll('.lnk-person').forEach(a=>{
+    a.addEventListener('click',ev=>{
+      ev.preventDefault();
+      // placeholder: בעתיד נשתמש ב-HISTORY כדי לצייר מגמה אישית
+      alert('בקרוב גרף מגמה לפי ימים עבור: ' + a.textContent);
+    });
+  });
+}
+
+function escapeHtml(s){return (s||"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m]))}
+
+async function loadAll(){
+  setShareLink();
+  const reqs = [
+    fetch(URL_LATEST_SCORES).then(r=>r.ok?r.json():{date:null,rows:[]})
+  ];
+  try{
+    reqs.push(fetch(URL_HISTORY).then(r=>r.ok?r.json():[]));
+  }catch(e){/* ignore */ }
+
+  const [latest, history] = await Promise.all(reqs);
+  SCORES = latest || {date:null, rows:[]};
+  HISTORY = history || [];
+
+  document.getElementById('meta').textContent =
+    `${SCORES.rows.length} רשומות • ${new Date(SCORES.date||Date.now()).toLocaleString('he-IL')}`;
+
+  drawTop10(SCORES.rows);
+  buildTable(SCORES.rows);
+
+  const q = document.getElementById('q');
+  q.oninput = () => {
+    const s = (q.value||"").trim();
+    const rows = SCORES.rows.filter(r =>
+      (r.name||"").includes(s) || (r.party||"").includes(s) || (r.role||"").includes(s)
+    );
+    buildTable(rows);
+  };
+}
+
+loadAll();
+</script>
+</body>
+</html>

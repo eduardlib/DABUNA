@@ -1,0 +1,15 @@
+name: Smoke test (Telegram)
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send smoke message to news channel
+        run: |
+          curl -sS -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="@DabunaNews" \
+            -d parse_mode="Markdown" \
+            -d text="✅ DABUNA smoke — $GITHUB_RUN_NUMBER | $(date -u +'%Y-%m-%d %H:%M:%S') UTC"
