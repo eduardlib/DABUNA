@@ -1,148 +1,212 @@
 <!doctype html>
 <html lang="he" dir="rtl">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>DABUNA – מדד אמינות ועקביות (חי)</title>
-<link href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/css/tabler.min.css" rel="stylesheet"/>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<style>
-  body{background:#0f172a;color:#e2e8f0}
-  .card{background:#111827;border:1px solid #1f2937}
-  a{color:#60a5fa}
-  .badge{font-size:.75rem}
-  .grid{display:grid;grid-template-columns:1fr 380px;gap:16px}
-  @media(max-width:1000px){.grid{grid-template-columns:1fr}}
-  .table td,.table th{vertical-align:middle;border-color:#1f2937}
-  .muted{color:#94a3b8}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>מדד אמינות ועקביות (חי)</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family: system-ui, Arial, sans-serif; margin: 24px; background:#0e1522; color:#eef1f6; }
+    h1 { margin: 0 0 8px; }
+    .muted { color:#95a1b2; font-size:.9rem }
+    .grid { display:grid; grid-template-columns: 1fr 2fr; gap: 16px; }
+    .card { background:#0b1120; border:1px solid #1f2a44; border-radius:12px; padding:16px; }
+    table { width:100%; border-collapse: collapse; }
+    th,td { border-bottom:1px solid #1f2a44; padding:8px; text-align:right; }
+    th { color:#9fb4d6; font-weight:600; }
+    input[type="search"]{width:100%; padding:12px; border-radius:10px; border:1px solid #1f2a44; background:#0b1120; color:#eef1f6;}
+    .row { display:flex; gap:12px; align-items:center; justify-content:flex-start; margin-top:10px }
+    .btn { padding:10px 14px; border-radius:10px; border:1px solid #1f2a44; background:#112042; color:#dfe8fa; text-decoration:none; }
+    .btn:hover { filter: brightness(1.1); }
+    .empty { text-align:center; color:#9fb4d6; padding:24px; }
+  </style>
 </head>
-<body class="container-xl py-4">
+<body>
+  <h1>מדד אמינות ועקביות (חי)</h1>
+  <div class="muted"><span id="last-updated">—</span> • <span id="count">רשומות 0</span></div>
 
-<h2 class="mb-3">מדד אמינות ועקביות (חי)</h2>
-<div class="muted mb-3"><span id="meta">מתעדכן…</span></div>
-
-<div class="grid">
-  <!-- גרף TOP10 -->
-  <div class="card p-3">
-    <canvas id="chartTop"></canvas>
-    <div class="mt-2 muted" style="font-size:.85rem">לחיצה על שם בטבלה תצייר לו גרף מגמה (כאשר ייאסף היסטוריית ימים).</div>
-  </div>
-
-  <!-- טבלת פוליטיקאים -->
-  <div class="card p-3">
-    <input id="q" class="form-control mb-2" placeholder="חיפוש לפי שם/מפלגה/תפקיד…">
-    <div style="max-height:70vh;overflow:auto">
-      <table class="table table-hover">
+  <div class="grid" style="margin-top:12px">
+    <div class="card">
+      <input id="q" type="search" placeholder="חיפוש לפי שם/מפלגה/תפקיד…" />
+      <table id="tbl" style="margin-top:12px">
         <thead>
-          <tr>
-            <th style="width:60px">Index</th>
-            <th>שם</th>
-            <th>מפלגה</th>
-            <th>תפקיד</th>
-          </tr>
+          <tr><th>תפקיד</th><th>מפלגה</th><th>שם</th><th>INDEX</th></tr>
         </thead>
-        <tbody id="rows"></tbody>
+        <tbody></tbody>
       </table>
+      <div id="tbl-empty" class="empty" style="display:none">אין נתונים להצגה.</div>
+    </div>
+
+    <div class="card">
+      <canvas id="chart" height="240"></canvas>
+      <div class="muted">לחיצה על שם בטבלה תציג את הערך בגרף. אם אין היסטוריה, יוצג תרשים עמודות של הטופ-10 הנוכחי.</div>
+      <div class="row">
+        <a class="btn" id="btn-share" target="_blank">שתפו 🔗</a>
+        <a class="btn" id="btn-news" target="_blank">ערוץ החדשות 📰</a>
+        <a class="btn" id="btn-index" target="_blank">ערוץ המדד 📊</a>
+      </div>
     </div>
   </div>
-</div>
-
-<hr class="my-4">
-
-<div class="d-flex gap-2">
-  <a class="btn btn-primary" href="https://t.me/DabunaNews" target="_blank">🔔 ערוץ החדשות</a>
-  <a class="btn btn-secondary" href="https://t.me/DabunaRating" target="_blank">📊 ערוץ המדד</a>
-  <a class="btn btn-outline-light" id="btnShare" target="_blank">🔗 שתפו</a>
-</div>
 
 <script>
-const URL_LATEST_SCORES = "../storage/latest_scores.json";   // נתוני המדד (חי)
-const URL_HISTORY = "../storage/history_scores.json";        // אופציונלי – אם יצטבר
+const URL_LATEST = "./latest_scores.json";   // שים לב לנתיב יחסי (Project Pages)
+const URL_HISTORY = "./history_scores.json";
 
-let SCORES = {date:null, rows:[]};
-let HISTORY = [];
-let chartTop = null;
+const DASH_URL = "https://eduardlib.github.io/DABUNA/";
+const NEWS_CH = "https://t.me/DabunaNews";
+const RATING_CH = "https://t.me/DabunaRating";
 
-function fmt(n){return Math.round(n) || 0}
-function setShareLink(){
-  const u = location.href;
-  const t = encodeURIComponent("מדד אמינות ועקביות – DABUNA");
-  document.getElementById('btnShare').href =
-    `https://t.me/share/url?url=${encodeURIComponent(u)}&text=${t}`;
+// עזרה: ממפה אובייקט/מערך לשורה אחת עם שמות שדות עקביים
+function normalizeRows(objOrArr){
+  // latest יכול להיות {date, rows:[...]} או פשוט [...]. מנרמלים:
+  let rows = Array.isArray(objOrArr) ? objOrArr : (objOrArr?.rows || []);
+  return rows.map(r => ({
+    name: r.name || r.Name || "",
+    party: r.party || r.Party || "",
+    role: r.role || r.Role || "",
+    index: Number(r.IndexScore ?? r.index ?? r.score ?? 0),
+    consistency: Number(r.Consistency ?? r.consistency ?? 0),
+    fact: Number(r.FactIntegrity ?? r.fact ?? 0),
+    trans: Number(r.Transparency ?? r.trans ?? 0),
+  }));
 }
 
-function drawTop10(rows){
-  const top = [...rows].sort((a,b)=>b.IndexScore-a.IndexScore).slice(0,10);
-  const labels = top.map(r=>r.name);
-  const data = top.map(r=>fmt(r.IndexScore));
-  const ctx = document.getElementById('chartTop').getContext('2d');
-  if(chartTop) chartTop.destroy();
-  chartTop = new Chart(ctx,{
-    type:'bar',
-    data:{labels,datasets:[{label:'Index',data}]},
-    options:{
-      responsive:true,
-      scales:{y:{beginAtZero:true,max:100,ticks:{color:'#cbd5e1'}},x:{ticks:{color:'#cbd5e1'}}},
-      plugins:{legend:{labels:{color:'#cbd5e1'}}}
-    }
-  });
-}
-
-function buildTable(rows){
-  const tb = document.getElementById('rows');
-  tb.innerHTML = "";
-  for(const r of rows){
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><span class="badge bg-primary">${fmt(r.IndexScore)}</span></td>
-      <td><a href="#" data-id="${r.id}" class="lnk-person">${escapeHtml(r.name)}</a></td>
-      <td>${escapeHtml(r.party||"")}</td>
-      <td>${escapeHtml(r.role||"")}</td>`;
-    tb.appendChild(tr);
+function normalizeHistory(historyJson){
+  // history: {"days":[{"date":"YYYY-MM-DD","rows":[...]}, ...]}
+  const out = {};
+  const days = historyJson?.days || [];
+  for(const d of days){
+    const date = d.date || "";
+    const rows = normalizeRows(d);
+    rows.forEach(r=>{
+      const key = r.name || "";
+      out[key] = out[key] || [];
+      out[key].push({date, index:r.index});
+    });
   }
-  // future: draw person trend when we’ll have HISTORY
-  tb.querySelectorAll('.lnk-person').forEach(a=>{
-    a.addEventListener('click',ev=>{
+  // מיין לפי תאריך
+  for(const k in out){ out[k].sort((a,b)=>a.date.localeCompare(b.date)); }
+  return out;
+}
+
+let LATEST = [];
+let HIST = {};
+let chart;
+
+function setButtons(){
+  document.querySelector("#btn-share").href = "https://t.me/share/url?url="+encodeURIComponent(DASH_URL);
+  document.querySelector("#btn-news").href = NEWS_CH;
+  document.querySelector("#btn-index").href = RATING_CH;
+}
+
+async function loadData(){
+  const [a,b] = await Promise.all([
+    fetch(URL_LATEST).then(r=>r.json()).catch(()=>({rows:[]})),
+    fetch(URL_HISTORY).then(r=>r.json()).catch(()=>({days:[]})),
+  ]);
+  // עדכון טקסט עליון
+  const date = a?.date || (new Date()).toISOString();
+  document.querySelector("#last-updated").textContent = new Date(date).toLocaleString("he-IL");
+
+  LATEST = normalizeRows(a);
+  HIST = normalizeHistory(b);
+
+  document.querySelector("#count").textContent = "רשומות " + LATEST.length;
+
+  renderTable(LATEST);
+  renderChartInitial();
+}
+
+function renderTable(rows){
+  const tb = document.querySelector("#tbl tbody");
+  const empty = document.querySelector("#tbl-empty");
+  tb.innerHTML = "";
+  if(!rows.length){ empty.style.display="block"; return; }
+  empty.style.display="none";
+  rows.slice(0, 100).forEach(r=>{
+    const tr = document.createElement("tr");
+    const nameCell = `<a href="#" data-name="${r.name}" class="rowlink" style="color:#e5f2ff;text-decoration:underline">${r.name}</a>`;
+    tr.innerHTML = `<td>${r.role}</td><td>${r.party}</td><td>${nameCell}</td><td>${r.index.toFixed(0)}</td>`;
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll(".rowlink").forEach(a=>{
+    a.addEventListener("click",(ev)=>{
       ev.preventDefault();
-      // placeholder: בעתיד נשתמש ב-HISTORY כדי לצייר מגמה אישית
-      alert('בקרוב גרף מגמה לפי ימים עבור: ' + a.textContent);
+      const nm = a.getAttribute("data-name");
+      renderChartForPerson(nm);
     });
   });
 }
 
-function escapeHtml(s){return (s||"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m]))}
+function destroyChart(){ if(chart){ chart.destroy(); chart=null; } }
 
-async function loadAll(){
-  setShareLink();
-  const reqs = [
-    fetch(URL_LATEST_SCORES).then(r=>r.ok?r.json():{date:null,rows:[]})
-  ];
-  try{
-    reqs.push(fetch(URL_HISTORY).then(r=>r.ok?r.json():[]));
-  }catch(e){/* ignore */ }
-
-  const [latest, history] = await Promise.all(reqs);
-  SCORES = latest || {date:null, rows:[]};
-  HISTORY = history || [];
-
-  document.getElementById('meta').textContent =
-    `${SCORES.rows.length} רשומות • ${new Date(SCORES.date||Date.now()).toLocaleString('he-IL')}`;
-
-  drawTop10(SCORES.rows);
-  buildTable(SCORES.rows);
-
-  const q = document.getElementById('q');
-  q.oninput = () => {
-    const s = (q.value||"").trim();
-    const rows = SCORES.rows.filter(r =>
-      (r.name||"").includes(s) || (r.party||"").includes(s) || (r.role||"").includes(s)
-    );
-    buildTable(rows);
-  };
+function renderChartInitial(){
+  // אם יש היסטוריה – נצייר קו לזו עם הכי הרבה נקודות, אחרת עמודות לטופ-10 נוכחי
+  const names = Object.keys(HIST);
+  if(names.length){
+    // מצא את האדם עם הכי הרבה נקודות
+    names.sort((x,y)=>HIST[y].length - HIST[x].length);
+    renderChartForPerson(names[0]);
+  }else{
+    const top = [...LATEST].sort((a,b)=>b.index-a.index).slice(0,10);
+    destroyChart();
+    const ctx = document.getElementById("chart").getContext("2d");
+    chart = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: top.map(r=>r.name),
+        datasets: [{ label: "Index", data: top.map(r=>r.index) }]
+      },
+      options: { responsive:true, maintainAspectRatio:false,
+        scales:{ y:{ suggestedMin:0, suggestedMax:100 } }
+      }
+    });
+  }
 }
 
-loadAll();
+function renderChartForPerson(name){
+  const series = HIST[name] || [];
+  if(!series.length){
+    // אין היסטוריה – הצג עמודה בודדת מהנתון האחרון (אם קיים)
+    const found = LATEST.find(r=>r.name===name);
+    destroyChart();
+    const ctx = document.getElementById("chart").getContext("2d");
+    chart = new Chart(ctx, {
+      type: "bar",
+      data: { labels: [name], datasets:[{label:"Index", data:[found?found.index:0]}] },
+      options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ suggestedMin:0, suggestedMax:100 } } }
+    });
+    return;
+  }
+  destroyChart();
+  const ctx = document.getElementById("chart").getContext("2d");
+  chart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: series.map(p=>p.date),
+      datasets: [{ label: name, data: series.map(p=>p.index), tension:0.3 }]
+    },
+    options: { responsive:true, maintainAspectRatio:false,
+      scales:{ y:{ suggestedMin:0, suggestedMax:100 } }
+    }
+  });
+}
+
+document.querySelector("#q").addEventListener("input", (e)=>{
+  const q = e.target.value.trim().toLowerCase();
+  if(!q) return renderTable(LATEST);
+  const rows = LATEST.filter(r =>
+    (r.name||"").toLowerCase().includes(q) ||
+    (r.party||"").toLowerCase().includes(q) ||
+    (r.role||"").toLowerCase().includes(q)
+  );
+  renderTable(rows);
+});
+
+setButtons();
+loadData();
 </script>
 </body>
 </html>
