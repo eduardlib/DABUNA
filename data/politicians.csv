@@ -1,18 +1,36 @@
 id,name,party,role,aliases
-POL_PM_NETANYAHU,בנימין נתניהו,הליכוד,ראש הממשלה,"ביבי;נתניהו;רה\"מ"
-POL_OPP_LAPID,יאיר לפיד,יש עתיד,יו\"ר האופוזיציה,"לפיד;יאיר לפיד"
-POL_GANTZ,בני גנץ,המחנה הממלכתי,יו\"ר המפלגה,"גנץ;הרמטכ\"ל לשעבר"
-POL_SMOTRICH,בצלאל סמוטריץ',הציונות הדתית,שר האוצר,"סמוטריץ;סמוטריץ'"
-POL_BEN_GVIR,איתמר בן־גביר,עוצמה יהודית,שר לביטחון לאומי,"בן גביר;בן-גביר;א. בן גביר"
-POL_BARKAT,ניר ברקת,הליכוד,שר הכלכלה,"ברקת;נ. ברקת"
-POL_SAAR,גדעון סער,תקווה חדשה,שר חוץ/בכיר,"סער;ג. סער"
-POL_ISRAEL_KATZ,ישראל כ"ץ,הליכוד,שר הביטחון,"ישראל כץ;כץ"
-POL_LIBERMAN,אביגדור ליברמן,ישראל ביתנו,יו\"ר המפלגה,"ליברמן;איווט"
-POL_MICHAELI,מרב מיכאלי,העבודה,יו\"ר המפלגה,"מיכאלי"
-POL_ABBAS,מנסור עבאס,רע\"ם,יו\"ר המפלגה,"עבאס;מ. עבאס"
-POL_GAFNI,משה גפני,יהדות התורה,יו\"ר ועדת הכספים,"גפני"
-POL_GALLANT,יואב גלנט,הליכוד,שר הביטחון,"גלנט;י. גלנט"
-POL_DERI,אריה דרעי,ש\"ס,יו\"ר המפלגה,"דרעי"
-POL_TIBI,אחמד טיבי,תע\"ל,ח\"כ,"טיבי;א. טיבי"
-POL_REGEV,מירי רגב,הליכוד,שרה,"רגב"
-POL_BENNETT,נפתלי בנט,ימינה,רה\"מ לשעבר,"בנט"
+netanyahu,בנימין נתניהו,הליכוד,ראש ממשלה,נתניהו;ביבי;Benjamin Netanyahu;Bibi;Netanyahu
+gantz,בני גנץ,המחנה הממלכתי,יו"ר המחנה הממלכתי,Benny Gantz;Gantz;גנץ
+lapid,יאיר לפיד,יש עתיד,ראש האופוזיציה,Yair Lapid;Lapid;לפיד
+smotrich,בצלאל סמוטריץ',הציונות הדתית,שר האוצר,Bezalel Smotrich;Smotrich;סמוטריץ
+ben_gvir,איתמר בן גביר,עוצמה יהודית,שר לביטחון לאומי,Itamar Ben Gvir;Ben Gvir;בן גביר
+deri,אריה דרעי,ש״ס,שר בכיר,Aryeh Deri;Deri;דרעי
+barkat,ניר ברקת,הליכוד,שר הכלכלה,Nir Barkat;Barkat;ברקת
+gallant,יואב גלנט,הליכוד,שר הביטחון,Yoav Gallant;Gallant;גלנט
+levin,יריב לוין,הליכוד,שר המשפטים,Yariv Levin;Levin;לוין
+katz,ישראל כ"ץ,הליכוד,שר החוץ,Israel Katz;Katz;כץ
+liberman,אביגדור ליברמן,ישראל ביתנו,יו״ר ישראל ביתנו,Avigdor Lieberman;Lieberman;ליברמן
+michaeli,מרב מיכאלי,העבודה,יו״ר העבודה,Merav Michaeli;Michaeli;מיכאלי
+sa_ar,גדעון סער,המחנה הממלכתי,שר לשעבר,Gideon Sa'ar;Saar;סער
+ohanna,אמיר אוחנה,הליכוד,יו״ר הכנסת,Amir Ohana;Ohana;אוחנה
+ariel,אורי מקלב,יהדות התורה,ח״כ,Uri Maklev;Maklev;מקלב
+goldknopf,יצחק גולדקנופף,יהדות התורה,שר לשעבר,Yitzhak Goldknopf;Goldknopf;גולדקנופף
+porush,מאיר פרוש,יהדות התורה,שר התפוצות,Meir Porush;Porush;פרוש
+smoli,עומר בר-לב,העבודה,שר לביטחון פנים לשעבר,Omer Bar-Lev;Bar Lev;בר לב
+shaked,איילת שקד,ימינה,שרת פנים לשעבר,Ayelet Shaked;Shaked;שקד
+bennett,נפתלי בנט,ימינה,ראש ממשלה לשעבר,Naftali Bennett;Bennett;בנט
+horowitz,ניצן הורוביץ,מרצ,שר בריאות לשעבר,Nitzan Horowitz;Horowitz;הורוביץ
+gafni,משה גפני,יהדות התורה,יו"ר ועדת הכספים,Moshe Gafni;Gafni;גפני
+karhi,שלמה קרעי,הליכוד,שר התקשורת,Shlomo Karhi;Karhi;קרעי
+biton,יואב קיש,הליכוד,שר החינוך,Yoav Kisch;Kisch;קיש
+akunis,אופיר אקוניס,הליכוד,שר המדע,Ofir Akunis;Akunis;אקוניס
+elkin,זאב אלקין,המחנה הממלכתי,שר לשעבר,Ze'ev Elkin;Elkin;אלקין
+zandberg,תמר זנדברג,מרצ,שרה לשעבר,Tamar Zandberg;Zandberg;זנדברג
+regev,מירי רגב,הליכוד,שרת התחבורה,Miri Regev;Regev;רגב
+hendel,יועז הנדל,דרך ארץ,שר תקשורת לשעבר,Yoaz Hendel;Hendel;הנדל
+hotovely,ציפי חוטובלי,הליכוד,שגרירה לשעבר,Tzipi Hotovely;Hotovely;חוטובלי
+barbibai,אורנה ברביבאי,יש עתיד,שרה לשעבר,Orna Barbivai;Barbibai;ברביבאי
+trooper,חילי טרופר,המחנה הממלכתי,שר לשעבר,Chili Tropper;Tropper;טרופר
+peretz,עמיר פרץ,העבודה,שר לשעבר,Amir Peretz;Peretz;פרץ
+kahana,מתן כהנא,המחנה הממלכתי,שר לשעבר,Matan Kahana;Kahana;כהנא
+smadja,סילמן,ימינה/הליכוד,ח״כ לשעבר,Idit Silman;Silman;סילמן
