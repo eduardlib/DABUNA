@@ -2,25 +2,25 @@ channels:
   news: "@DabunaNews"
   rating: "@DabunaRating"
 
+storage_dir: "storage"
+
 web:
-dashboard_url: "https://eduardlib.github.io/DABUNA/"
+  dashboard_url: "https://eduardlib.github.io/DABUNA/"
   share_url: "https://t.me/share/url?url=https://eduardlib.github.io/DABUNA/"
-
-publish:
-  max_per_run: 18
-  sleep_seconds: 30
-  allow_duplicates: false
-
-translate:
-  enabled: true
-  max_per_run: 12
-  service_url: "https://translate.astian.org/translate"
-
-filters:
-  min_title_len: 18
-  require_hebrew: false
 
 sources:
   whitelist_file: "data/sources_whitelist.yaml"
 
-storage_dir: "storage"
+filters:
+  min_title_len: 16
+  require_hebrew: false
+
+translate:
+  enabled: true
+  max_per_run: 5
+  service_url: "https://translate.astian.org/translate"
+
+publish:
+  max_per_run: 10
+  sleep_seconds: 30
+  allow_duplicates: false
