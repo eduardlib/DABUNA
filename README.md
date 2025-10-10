@@ -1,30 +1,16 @@
-# DABUNA — News + Credibility Index Bot
+# DABUNA — Audience-Optimized
 
-Production-ready Telegram bot that fetches news from RSS sources, filters and (optionally) translates,
-ranks items by a naive credibility **Index**, and publishes to channels:
-- News: `@DabunaNews`
-- Rating: `@DabunaRating`
+- יומי: פוסטים עם **תמונה+כיתוב**, הוק/אימוג’י, האשטאגים נקיים, כפתור “פתח כתבה ↗” לכל פריט.
+- שבועי: סיכום “מדד” ל-@DabunaRating.
+- דה-דופליקציה: נרמול כתובות + דמיון כותרות.
+- תרגום: LibreTranslate (מוגבל ל־max_per_run כדי לא להציף).
+- שעות פרסום: דרך `tick` (כל שעה), הקוד יורה ב־18:00 יומי וב־14:00 שישי (Asia/Jerusalem).
 
-## Quick Start (Local)
+## התקנה מהירה
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 export TELEGRAM_BOT_TOKEN=YOUR_TOKEN
-python run.py daily
-python run.py weekly
-python run.py miniapp
-```
-
-## Configuration
-Edit `config.yaml`:
-- Add RSS feeds under `sources:`
-- Tune `filters`, `translate`, `rating`, `publish`
-
-## GitHub Actions
-Workflows in `.github/workflows`:
-- `daily.yml` — every day 18:00 Asia/Jerusalem
-- `weekly.yml` — Fridays 14:00 Asia/Jerusalem
-- `tick.yml` — hourly health checks
-- `miniapp.yml` — daily refresh miniapp
-- `*_manual.yml` — manual triggers
-Set repository secret: `TELEGRAM_BOT_TOKEN`.
+python run.py tick      # יופעל אחת לשעה; בשעות היעד יפרסם
+python run.py daily     # ידני
+python run.py weekly    # ידני
+python run.py miniapp   # הודעת miniapp/תפריט
