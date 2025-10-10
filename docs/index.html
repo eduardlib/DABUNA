@@ -3,102 +3,142 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>מדד אמינות ועקביות (חי)</title>
+  <title>מדד דבונה – לוח חי</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     :root { color-scheme: dark; }
-    body { font-family: system-ui, Arial, sans-serif; margin: 24px; background:#0e1522; color:#eef1f6; }
-    h1 { margin: 0 0 8px; }
-    .muted { color:#95a1b2; font-size:.9rem }
-    .grid { display:grid; grid-template-columns: 1fr 2fr; gap: 16px; }
-    .card { background:#0b1120; border:1px solid #1f2a44; border-radius:12px; padding:16px; }
-    table { width:100%; border-collapse: collapse; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, Arial, sans-serif; margin: 20px; background:#0e1522; color:#eef1f6; }
+    h1 { margin: 0 0 6px; font-size: 1.6rem; }
+    .muted { color:#9db0c9; font-size: .92rem; }
+    .wrap { display:grid; grid-template-columns: 360px 1fr; gap: 16px; align-items:start; }
+    .card { background:#0b1120; border:1px solid #1f2a44; border-radius:12px; padding:14px; }
+    .toolbar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 0; }
+    .btn { padding:9px 12px; border-radius:10px; border:1px solid #1f2a44; background:#112042; color:#dfe8fa; text-decoration:none; cursor:pointer; }
+    .btn:hover { filter: brightness(1.1); }
+    input[type="search"]{width:100%; padding:11px; border-radius:10px; border:1px solid #1f2a44; background:#0b1120; color:#eef1f6;}
+    table { width:100%; border-collapse: collapse; font-size:.95rem; }
     th,td { border-bottom:1px solid #1f2a44; padding:8px; text-align:right; }
     th { color:#9fb4d6; font-weight:600; }
-    input[type="search"]{width:100%; padding:12px; border-radius:10px; border:1px solid #1f2a44; background:#0b1120; color:#eef1f6;}
-    .row { display:flex; gap:12px; align-items:center; justify-content:flex-start; margin-top:10px }
-    .btn { padding:10px 14px; border-radius:10px; border:1px solid #1f2a44; background:#112042; color:#dfe8fa; text-decoration:none; }
-    .btn:hover { filter: brightness(1.1); }
     .empty { text-align:center; color:#9fb4d6; padding:24px; }
+    .tabs { display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
+    .tab { padding:8px 12px; border-radius:999px; background:#0b1731; border:1px solid #1f2a44; cursor:pointer; }
+    .tab.active { background:#17346e; }
+    .panel { display:none; }
+    .panel.active { display:block; }
+    .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .rowlink { color:#e5f2ff; text-decoration:underline; cursor:pointer; }
+    .pill { font-size:.84rem; padding:2px 8px; border-radius:999px; background:#132246; border:1px solid #223862; color:#cfe2ff; }
+    @media (max-width: 980px) { .wrap { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
-  <h1>מדד אמינות ועקביות (חי)</h1>
-  <div class="muted"><span id="last-updated">—</span> • <span id="count">רשומות 0</span></div>
+  <h1>מדד דבונה – לוח חי</h1>
+  <div class="muted">
+    <span id="last-updated">—</span> •
+    <span id="count">רשומות 0</span> •
+    <a class="btn" id="btn-share" target="_blank">שתפו 🔗</a>
+    <a class="btn" target="_blank" href="https://t.me/DabunaNews">ערוץ החדשות 📰</a>
+    <a class="btn" target="_blank" href="https://t.me/DabunaRating">ערוץ המדד 📊</a>
+  </div>
 
-  <div class="grid" style="margin-top:12px">
+  <div class="wrap" style="margin-top:12px">
     <div class="card">
       <input id="q" type="search" placeholder="חיפוש לפי שם/מפלגה/תפקיד…" />
-      <table id="tbl" style="margin-top:12px">
-        <thead>
-          <tr><th>תפקיד</th><th>מפלגה</th><th>שם</th><th>INDEX</th></tr>
-        </thead>
+      <table id="tbl" style="margin-top:10px">
+        <thead><tr><th>תפקיד</th><th>מפלגה</th><th>שם</th><th>INDEX</th></tr></thead>
         <tbody></tbody>
       </table>
       <div id="tbl-empty" class="empty" style="display:none">אין נתונים להצגה.</div>
+
+      <div id="profile" class="card" style="margin-top:12px; background:#0a111f;">
+        <div class="muted">פרופיל פוליטיקאי</div>
+        <div id="profile-title" style="font-weight:700; margin-top:6px;">—</div>
+        <canvas id="chart-person" height="180" style="margin-top:8px"></canvas>
+        <div id="profile-meta" class="toolbar"></div>
+        <div id="profile-headlines" class="muted" style="margin-top:8px"></div>
+      </div>
     </div>
 
-    <div class="card">
-      <canvas id="chart" height="240"></canvas>
-      <div class="muted">לחיצה על שם בטבלה תציג את הערך בגרף. אם אין היסטוריה, יוצג תרשים עמודות של הטופ-10 הנוכחי.</div>
-      <div class="row">
-        <a class="btn" id="btn-share" target="_blank">שתפו 🔗</a>
-        <a class="btn" id="btn-news" target="_blank">ערוץ החדשות 📰</a>
-        <a class="btn" id="btn-index" target="_blank">ערוץ המדד 📊</a>
+    <div>
+      <div class="tabs">
+        <button class="tab active" data-panel="p-top">Top-10 היום</button>
+        <button class="tab" data-panel="p-movers">Top Movers (24ש׳)</button>
+        <button class="tab" data-panel="p-parties">ממוצע לפי מפלגה</button>
+        <button class="tab" data-panel="p-hist">התפלגות מדד</button>
+        <button class="tab" data-panel="p-trends">מגמות מובילים</button>
+      </div>
+
+      <div id="p-top" class="panel active card">
+        <canvas id="chart-top" height="260"></canvas>
+      </div>
+
+      <div id="p-movers" class="panel card">
+        <div class="grid2">
+          <div>
+            <div class="muted">עליות חזקות</div>
+            <canvas id="chart-up" height="220"></canvas>
+          </div>
+          <div>
+            <div class="muted">ירידות חדות</div>
+            <canvas id="chart-down" height="220"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div id="p-parties" class="panel card">
+        <canvas id="chart-party" height="260"></canvas>
+      </div>
+
+      <div id="p-hist" class="panel card">
+        <canvas id="chart-hist" height="260"></canvas>
+      </div>
+
+      <div id="p-trends" class="panel card">
+        <div class="muted">מגמות ל-5 המובילים ביום האחרון</div>
+        <canvas id="chart-trends" height="280"></canvas>
       </div>
     </div>
   </div>
 
 <script>
-const URL_LATEST = "./latest_scores.json";   // שים לב לנתיב יחסי (Project Pages)
+const URL_LATEST  = "./latest_scores.json";
 const URL_HISTORY = "./history_scores.json";
+const DASH_URL    = "https://eduardlib.github.io/DABUNA/";
 
-const DASH_URL = "https://eduardlib.github.io/DABUNA/";
-const NEWS_CH = "https://t.me/DabunaNews";
-const RATING_CH = "https://t.me/DabunaRating";
+let LATEST=[], HIST={}, LAST_DATE=null, PREV_DATE=null;
+let chartTop, chartUp, chartDown, chartParty, chartHist, chartTrends, chartPerson;
 
-// עזרה: ממפה אובייקט/מערך לשורה אחת עם שמות שדות עקביים
+function setButtons(){
+  document.querySelector("#btn-share").href =
+    "https://t.me/share/url?url="+encodeURIComponent(DASH_URL);
+}
+function destroy(c){ if(c){ c.destroy(); } }
+
 function normalizeRows(objOrArr){
-  // latest יכול להיות {date, rows:[...]} או פשוט [...]. מנרמלים:
-  let rows = Array.isArray(objOrArr) ? objOrArr : (objOrArr?.rows || []);
+  const rows = Array.isArray(objOrArr) ? objOrArr : (objOrArr?.rows || []);
   return rows.map(r => ({
     name: r.name || r.Name || "",
     party: r.party || r.Party || "",
-    role: r.role || r.Role || "",
+    role:  r.role  || r.Role  || "",
     index: Number(r.IndexScore ?? r.index ?? r.score ?? 0),
-    consistency: Number(r.Consistency ?? r.consistency ?? 0),
-    fact: Number(r.FactIntegrity ?? r.fact ?? 0),
-    trans: Number(r.Transparency ?? r.trans ?? 0),
+    headlines: r.headlines || []
   }));
 }
-
 function normalizeHistory(historyJson){
-  // history: {"days":[{"date":"YYYY-MM-DD","rows":[...]}, ...]}
-  const out = {};
-  const days = historyJson?.days || [];
+  const out = {}; const days = historyJson?.days || [];
   for(const d of days){
     const date = d.date || "";
     const rows = normalizeRows(d);
     rows.forEach(r=>{
       const key = r.name || "";
       out[key] = out[key] || [];
-      out[key].push({date, index:r.index});
+      out[key].push({date, index:r.index, party:r.party, role:r.role, headlines:r.headlines||[]});
     });
   }
-  // מיין לפי תאריך
   for(const k in out){ out[k].sort((a,b)=>a.date.localeCompare(b.date)); }
-  return out;
-}
-
-let LATEST = [];
-let HIST = {};
-let chart;
-
-function setButtons(){
-  document.querySelector("#btn-share").href = "https://t.me/share/url?url="+encodeURIComponent(DASH_URL);
-  document.querySelector("#btn-news").href = NEWS_CH;
-  document.querySelector("#btn-index").href = RATING_CH;
+  return { series: out, dates: days.map(d=>d.date).sort() };
 }
 
 async function loadData(){
@@ -106,17 +146,21 @@ async function loadData(){
     fetch(URL_LATEST).then(r=>r.json()).catch(()=>({rows:[]})),
     fetch(URL_HISTORY).then(r=>r.json()).catch(()=>({days:[]})),
   ]);
-  // עדכון טקסט עליון
+
   const date = a?.date || (new Date()).toISOString();
   document.querySelector("#last-updated").textContent = new Date(date).toLocaleString("he-IL");
 
   LATEST = normalizeRows(a);
-  HIST = normalizeHistory(b);
+  const h = normalizeHistory(b);
+  HIST = h.series;
+  const dts = h.dates;
+  LAST_DATE = dts.length ? dts[dts.length-1] : null;
+  PREV_DATE = dts.length>1 ? dts[dts.length-2] : null;
 
   document.querySelector("#count").textContent = "רשומות " + LATEST.length;
 
   renderTable(LATEST);
-  renderChartInitial();
+  renderAllCharts();
 }
 
 function renderTable(rows){
@@ -125,88 +169,184 @@ function renderTable(rows){
   tb.innerHTML = "";
   if(!rows.length){ empty.style.display="block"; return; }
   empty.style.display="none";
-  rows.slice(0, 100).forEach(r=>{
+  rows.slice(0, 200).forEach(r=>{
     const tr = document.createElement("tr");
-    const nameCell = `<a href="#" data-name="${r.name}" class="rowlink" style="color:#e5f2ff;text-decoration:underline">${r.name}</a>`;
-    tr.innerHTML = `<td>${r.role}</td><td>${r.party}</td><td>${nameCell}</td><td>${r.index.toFixed(0)}</td>`;
+    const anchor = `<span class="rowlink" data-name="${r.name}">${r.name}</span>`;
+    tr.innerHTML = `<td>${r.role}</td><td><span class="pill">${r.party}</span></td><td>${anchor}</td><td>${r.index.toFixed(0)}</td>`;
     tb.appendChild(tr);
   });
   tb.querySelectorAll(".rowlink").forEach(a=>{
-    a.addEventListener("click",(ev)=>{
-      ev.preventDefault();
-      const nm = a.getAttribute("data-name");
-      renderChartForPerson(nm);
-    });
+    a.addEventListener("click",()=> showProfile(a.getAttribute("data-name")));
   });
+  const top = [...rows].sort((a,b)=>b.index-a.index)[0];
+  if(top) showProfile(top.name);
 }
 
-function destroyChart(){ if(chart){ chart.destroy(); chart=null; } }
+function seriesFor(name){ return HIST[name] || []; }
 
-function renderChartInitial(){
-  // אם יש היסטוריה – נצייר קו לזו עם הכי הרבה נקודות, אחרת עמודות לטופ-10 נוכחי
-  const names = Object.keys(HIST);
-  if(names.length){
-    // מצא את האדם עם הכי הרבה נקודות
-    names.sort((x,y)=>HIST[y].length - HIST[x].length);
-    renderChartForPerson(names[0]);
-  }else{
-    const top = [...LATEST].sort((a,b)=>b.index-a.index).slice(0,10);
-    destroyChart();
-    const ctx = document.getElementById("chart").getContext("2d");
-    chart = new Chart(ctx, {
-      type: "bar",
-      data: {
-        labels: top.map(r=>r.name),
-        datasets: [{ label: "Index", data: top.map(r=>r.index) }]
-      },
-      options: { responsive:true, maintainAspectRatio:false,
-        scales:{ y:{ suggestedMin:0, suggestedMax:100 } }
-      }
-    });
+function showProfile(name){
+  document.getElementById("profile-title").textContent = name || "—";
+  const s = seriesFor(name);
+  const meta = document.getElementById("profile-meta");
+  meta.innerHTML = "";
+  let party="—", role="—", headlines=[];
+  if(s.length){
+    party = s[s.length-1].party || "—";
+    role  = s[s.length-1].role  || "—";
+    headlines = s[s.length-1].headlines || [];
+  } else {
+    const r = LATEST.find(x=>x.name===name);
+    if(r){ party=r.party; role=r.role; headlines=r.headlines||[]; }
   }
-}
+  meta.innerHTML = `<span class="pill">${party}</span><span class="pill">${role}</span>`;
 
-function renderChartForPerson(name){
-  const series = HIST[name] || [];
-  if(!series.length){
-    // אין היסטוריה – הצג עמודה בודדת מהנתון האחרון (אם קיים)
-    const found = LATEST.find(r=>r.name===name);
-    destroyChart();
-    const ctx = document.getElementById("chart").getContext("2d");
-    chart = new Chart(ctx, {
-      type: "bar",
-      data: { labels: [name], datasets:[{label:"Index", data:[found?found.index:0]}] },
+  destroy(chartPerson);
+  const ctx = document.getElementById("chart-person").getContext("2d");
+  if(!s.length){
+    const r = LATEST.find(x=>x.name===name);
+    chartPerson = new Chart(ctx, { type:"bar",
+      data:{ labels:[name], datasets:[{label:"Index", data:[r?r.index:0]}] },
       options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ suggestedMin:0, suggestedMax:100 } } }
     });
-    return;
+  } else {
+    chartPerson = new Chart(ctx, { type:"line",
+      data:{ labels:s.map(p=>p.date), datasets:[{label:name, data:s.map(p=>p.index), tension:.3}] },
+      options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ suggestedMin:0, suggestedMax:100 } } }
+    });
   }
-  destroyChart();
-  const ctx = document.getElementById("chart").getContext("2d");
-  chart = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels: series.map(p=>p.date),
-      datasets: [{ label: name, data: series.map(p=>p.index), tension:0.3 }]
-    },
-    options: { responsive:true, maintainAspectRatio:false,
-      scales:{ y:{ suggestedMin:0, suggestedMax:100 } }
-    }
+
+  const hbox = document.getElementById("profile-headlines");
+  hbox.innerHTML = "";
+  if(headlines && headlines.length){
+    const ul = document.createElement("ul");
+    headlines.slice(0,3).forEach(h=>{
+      const li = document.createElement("li");
+      li.textContent = h;
+      ul.appendChild(li);
+    });
+    hbox.appendChild(ul);
+  } else {
+    hbox.textContent = "—";
+  }
+}
+
+function renderAllCharts(){
+  renderTop10(); renderMovers(); renderPartyAvg(); renderHistogram(); renderTrends();
+}
+
+function renderTop10(){
+  const top = [...LATEST].sort((a,b)=>b.index-a.index).slice(0,10);
+  destroy(chartTop);
+  chartTop = new Chart(document.getElementById("chart-top").getContext("2d"), {
+    type:"bar",
+    data:{ labels: top.map(r=>r.name), datasets:[{label:"Index", data: top.map(r=>r.index)}] },
+    options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ suggestedMin:0, suggestedMax:100 } } }
   });
 }
 
-document.querySelector("#q").addEventListener("input", (e)=>{
-  const q = e.target.value.trim().toLowerCase();
+function mapLatestByName(){ const m=new Map(); LATEST.forEach(r=>m.set(r.name,r.index)); return m; }
+function latestOfDate(date){
+  const res = new Map();
+  Object.keys(HIST).forEach(name=>{
+    const p = (HIST[name]||[]).find(x=>x.date===date);
+    if(p) res.set(name, p.index);
+  });
+  return res;
+}
+function renderMovers(){
+  destroy(chartUp); destroy(chartDown);
+  if(!PREV_DATE){
+    chartUp = new Chart(document.getElementById("chart-up").getContext("2d"), {type:"bar", data:{labels:[], datasets:[{label:"Up", data:[]}]}, options:{responsive:true, maintainAspectRatio:false}});
+    chartDown = new Chart(document.getElementById("chart-down").getContext("2d"), {type:"bar", data:{labels:[], datasets:[{label:"Down", data:[]}]}, options:{responsive:true, maintainAspectRatio:false}});
+    return;
+  }
+  const lastMap = mapLatestByName(); const prevMap = latestOfDate(PREV_DATE);
+  const deltas=[];
+  for (const [name,v] of lastMap) {
+    if (prevMap.has(name)) {
+      const d = Number((v - prevMap.get(name)).toFixed(1));
+      deltas.push({name, delta:d});
+    }
+  }
+  deltas.sort((a,b)=>b.delta - a.delta);
+  const ups = deltas.filter(d=>d.delta>0).slice(0,5);
+  const downs = deltas.filter(d=>d.delta<0).slice(0,5).sort((a,b)=>a.delta-b.delta);
+  chartUp = new Chart(document.getElementById("chart-up").getContext("2d"), { type:"bar", data:{ labels: ups.map(x=>x.name), datasets:[{label:"+Δ", data: ups.map(x=>x.delta)}] }, options:{ responsive:true, maintainAspectRatio:false } });
+  chartDown = new Chart(document.getElementById("chart-down").getContext("2d"), { type:"bar", data:{ labels: downs.map(x=>x.name), datasets:[{label:"−Δ", data: downs.map(x=>Math.abs(x.delta))}] }, options:{ responsive:true, maintainAspectRatio:false } });
+}
+
+function renderPartyAvg(){
+  const groups = {};
+  LATEST.forEach(r=>{ (groups[r.party] ||= []).push(r.index); });
+  const labels = Object.keys(groups);
+  const data = labels.map(k=>{
+    const arr = groups[k], s = arr.reduce((a,b)=>a+b,0);
+    return Number((s/arr.length).toFixed(1));
+  });
+  destroy(chartParty);
+  chartParty = new Chart(document.getElementById("chart-party").getContext("2d"), {
+    type:"bar",
+    data:{ labels, datasets:[{label:"ממוצע", data}] },
+    options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ suggestedMin:0, suggestedMax:100 } } }
+  });
+}
+
+function renderHistogram(){
+  const bins = Array(10).fill(0);
+  LATEST.forEach(r=>{
+    const v = Math.max(0, Math.min(100, Math.round(r.index)));
+    const bi = Math.min(9, Math.floor(v/10));
+    bins[bi] += 1;
+  });
+  const labels = ["0–10","10–20","20–30","30–40","40–50","50–60","60–70","70–80","80–90","90–100"];
+  destroy(chartHist);
+  chartHist = new Chart(document.getElementById("chart-hist").getContext("2d"), {
+    type:"bar",
+    data:{ labels, datasets:[{label:"התפלגות", data: bins}] },
+    options:{ responsive:true, maintainAspectRatio:false }
+  });
+}
+
+function renderTrends(){
+  const top5 = [...LATEST].sort((a,b)=>b.index-a.index).slice(0,5).map(x=>x.name);
+  const dateSet = new Set();
+  top5.forEach(n=> (HIST[n]||[]).forEach(p=>dateSet.add(p.date)));
+  const dates = Array.from(dateSet).sort();
+  const datasets = top5.map(n=>{
+    const s = HIST[n] || [];
+    const map = new Map(s.map(p=>[p.date, p.index]));
+    const data = dates.map(d=> map.get(d) ?? null);
+    return { label:n, data, spanGaps:true, tension:.3 };
+  });
+  destroy(chartTrends);
+  chartTrends = new Chart(document.getElementById("chart-trends").getContext("2d"), {
+    type:"line",
+    data:{ labels: dates, datasets },
+    options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ suggestedMin:0, suggestedMax:100 } } }
+  });
+}
+
+document.querySelector("#q").addEventListener("input", e=>{
+  const q=(e.target.value||"").toLowerCase().trim();
   if(!q) return renderTable(LATEST);
   const rows = LATEST.filter(r =>
     (r.name||"").toLowerCase().includes(q) ||
     (r.party||"").toLowerCase().includes(q) ||
-    (r.role||"").toLowerCase().includes(q)
+    (r.role ||"").toLowerCase().includes(q)
   );
   renderTable(rows);
 });
 
-setButtons();
-loadData();
+document.querySelectorAll(".tab").forEach(t=>{
+  t.addEventListener("click", ()=>{
+    document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
+    t.classList.add("active");
+    document.getElementById(t.dataset.panel).classList.add("active");
+  });
+});
+
+setButtons(); loadData();
 </script>
 </body>
 </html>
