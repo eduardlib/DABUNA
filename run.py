@@ -465,4 +465,38 @@ def cmd_miniapp(cfg, token):
     msg = "🧩 <b>Dabuna Mini-App</b>\nעודכן בהצלחה. פתחו את המדד והדשבורד:"
     buttons = [
         [{"text": "📊 מדד", "url": web.get("dashboard_url", "")}],
-        [{"text": "🔗 שתפו", "url": web.get("share_url", "")
+        [{"text": "🔗 שתפו", "url": web.get("share_url", "")}],
+    ]
+    tg_send(token, dest, msg, buttons)
+    print("[DABUNA] miniapp posted.")
+
+def cmd_tick(cfg, token):
+    t = now_il()
+    hhmm = t.strftime("%H:%M")
+    weekday = t.weekday()  # Monday=0 ... Sunday=6
+    if hhmm == "18:00":
+        cmd_daily(cfg, token)
+    if weekday == 4 and hhmm == "14:00":
+        cmd_weekly(cfg, token)
+    print(f"[DABUNA] tick {hhmm} – nothing else to do.")
+
+# ---------- main ----------
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("cmd", nargs="?", choices=["daily", "weekly", "tick", "miniapp"], default="tick")
+    args = parser.parse_args()
+
+    cfg = load_cfg()
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    if not token:
+        raise SystemExit("Missing TELEGRAM_BOT_TOKEN env")
+
+    if args.cmd == "daily":
+        cmd_daily(cfg, token)
+    elif args.cmd == "weekly":
+        cmd_weekly(cfg, token)
+    elif args.cmd == "miniapp":
+        cmd_miniapp(cfg, token)
+    else:
+        cmd_tick(cfg, token)
