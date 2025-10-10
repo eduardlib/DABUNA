@@ -1,26 +1,20 @@
-# DABUNA v3 — Source Index + Topics Sync
+# DABUNA – חדשות + מדד + Miniapp (Diversified Sources + Multi-Translate Fallback)
 from __future__ import annotations
-import os, re, csv, json, time, html, datetime, hashlib, math
-from typing import List, Dict, Any, Optional, Tuple
-from urllib.parse import urlparse, parse_qs, urlunparse
+import os, re, csv, json, time, html, datetime, random
+from urllib.parse import urlparse, parse_qs, urlunparse, quote_plus
 from zoneinfo import ZoneInfo
 import requests, yaml, feedparser
 from bs4 import BeautifulSoup
 
 # ---------- Utils ----------
-def now_il(tz="Asia/Jerusalem") -> datetime.datetime:
-    return datetime.datetime.now(ZoneInfo(tz))
+def now_il() -> datetime.datetime:
+    return datetime.datetime.now(ZoneInfo("Asia/Jerusalem"))
 
 def safe(s: str) -> str:
     return html.escape(s or "", quote=False)
 
-def ensure_dir(path: str):
-    if path and path != ".":
-        os.makedirs(path, exist_ok=True)
-
-def read_yaml(path: str) -> Dict[str,Any]:
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+def ensure_dir(p: str):
+    if p and p != ".": os.makedirs(p, exist_ok=True)
 
 def read_json(path: str, default):
     try:
@@ -34,432 +28,390 @@ def write_json(path: str, data):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+def load_cfg():
+    with open("config.yaml", "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
 def is_hebrew(text: str) -> bool:
     return bool(re.search(r"[\u0590-\u05FF]", text or ""))
 
-# URL normalize/key
-_SKIP_QS = {"utm_source","utm_medium","utm_campaign","utm_term","utm_content","utm_name","gclid","fbclid","igshid","mc_cid","mc_eid","ref"}
+# ---------- Telegram ----------
+def tg_send(token, chat_id, html_text, buttons=None):
+    if os.getenv("DRY_RUN", "0") == "1":
+        print("[DRY_RUN] skip send (len=%d)" % len(html_text or ""))
+        return {"ok": True, "dry_run": True}
+
+    CHUNK_LIMIT = 3900
+    base = {"chat_id": chat_id, "parse_mode": "HTML", "disable_web_page_preview": False}
+    txt = html_text or ""
+    parts = []
+    while len(txt) > CHUNK_LIMIT:
+        cut = txt.rfind("\n", 0, CHUNK_LIMIT)
+        if cut < CHUNK_LIMIT//2: cut = CHUNK_LIMIT
+        parts.append(txt[:cut]); txt = txt[cut:]
+    parts.append(txt)
+
+    last = None
+    for i, part in enumerate(parts):
+        payload = dict(base); payload["text"] = part
+        if buttons and i == len(parts)-1:
+            payload["reply_markup"] = {"inline_keyboard": buttons}
+        backoff = 5
+        while True:
+            r = requests.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                headers={"Content-Type": "application/json"},
+                data=json.dumps(payload),
+                timeout=30,
+            )
+            if r.status_code == 429:
+                try: retry = r.json().get("parameters", {}).get("retry_after", backoff)
+                except Exception: retry = backoff
+                time.sleep(int(retry)+1); backoff = min(backoff*2, 60); continue
+            if not r.ok:
+                raise RuntimeError(f"Telegram API error: {r.status_code} {r.text}")
+            last = r.json(); break
+    return last
+
+# ---------- URL normalize ----------
+_SKIP_QS = {"utm_source","utm_medium","utm_campaign","utm_term","utm_content",
+            "utm_name","gclid","fbclid","igshid","mc_cid","mc_eid","ref","yclid","soc_src","soc_trk"}
+
 def normalize_url(u: str) -> str:
     try:
-        p = urlparse(u)
-        q = parse_qs(p.query, keep_blank_values=False)
+        p = urlparse(u); q = parse_qs(p.query, keep_blank_values=False)
         q = {k:v for k,v in q.items() if k not in _SKIP_QS}
         query = "&".join(f"{k}={v[0]}" for k,v in sorted(q.items()) if v)
-        p2 = p._replace(query=query, fragment="")
-        normalized = urlunparse(p2)
-        if normalized.endswith("/"):
-            normalized = normalized[:-1]
-        return normalized
+        p2 = p._replace(query=query, fragment=""); out = urlunparse(p2)
+        return out[:-1] if out.endswith("/") else out
     except Exception:
         return u or ""
 
 def url_key(u: str) -> str:
     try:
-        n = normalize_url(u)
-        p = urlparse(n)
+        n = normalize_url(u); p = urlparse(n)
         return f"{(p.netloc or '').lower()}{(p.path or '').rstrip('/')}"
     except Exception:
         return u or ""
 
-# ---------- Telegram ----------
-def tg_send(token, chat_id, html_text, buttons=None, preview=True):
-    if os.getenv("DRY_RUN","0") == "1":
-        print("[DRY_RUN] tg_send", len(html_text or ""))
-        return {"ok":True}
-    payload = {
-        "chat_id": chat_id, "text": html_text, "parse_mode": "HTML",
-        "disable_web_page_preview": not preview
-    }
-    if buttons:
-        payload["reply_markup"] = {"inline_keyboard": buttons}
-    r = requests.post(f"https://api.telegram.org/bot{token}/sendMessage",
-                      headers={"Content-Type":"application/json"},
-                      data=json.dumps(payload), timeout=30)
-    if r.status_code == 429:
-        try:
-            retry = r.json().get("parameters",{}).get("retry_after", 30)
-        except Exception:
-            retry = 30
-        time.sleep(int(retry)+1)
-        return tg_send(token, chat_id, html_text, buttons, preview)
-    r.raise_for_status()
-    return r.json()
+# ---------- HTTP helpers ----------
+_UA = "DabunaBot/1.1 (+https://t.me/DabunaNews)"
+def http_get(url: str, timeout=12):
+    try:
+        r = requests.get(url, timeout=timeout, headers={"User-Agent": _UA})
+        if r.ok: return r
+    except Exception: pass
+    return None
 
-def tg_photo(token, chat_id, photo_url: str, caption_html: str, buttons=None):
-    if os.getenv("DRY_RUN","0") == "1":
-        print("[DRY_RUN] tg_photo", photo_url)
-        return {"ok":True}
-    payload = {"chat_id": chat_id, "photo": photo_url, "caption": caption_html, "parse_mode":"HTML"}
-    if buttons:
-        payload["reply_markup"] = {"inline_keyboard": buttons}
-    r = requests.post(f"https://api.telegram.org/bot{token}/sendPhoto",
-                      headers={"Content-Type":"application/json"},
-                      data=json.dumps(payload), timeout=30)
-    if r.status_code == 429:
-        try:
-            retry = r.json().get("parameters",{}).get("retry_after", 30)
-        except Exception:
-            retry = 30
-        time.sleep(int(retry)+1)
-        return tg_photo(token, chat_id, photo_url, caption_html, buttons)
-    if r.ok: return r.json()
-    return tg_send(token, chat_id, caption_html, buttons)
+def fetch_text(url: str, timeout=12) -> str:
+    r = http_get(url, timeout=timeout)
+    return r.text if r is not None else ""
 
-# ---------- Content helpers ----------
-def clean_html(html_text: str) -> str:
-    soup = BeautifulSoup(html_text or "", "html.parser")
+# ---------- Sources / ingest ----------
+def clean_html(ht: str) -> str:
+    soup = BeautifulSoup(ht or "", "html.parser")
     for t in soup(["script","style","noscript"]): t.extract()
-    txt = soup.get_text(" ", strip=True) or ""
-    return " ".join(txt.split())
+    return " ".join((soup.get_text(" ", strip=True) or "").split())
 
-def fetch_html(url: str, timeout=12) -> str:
+def load_sources(whitelist_yaml: str):
     try:
-        r = requests.get(url, timeout=timeout, headers={"User-Agent":"Dabuna/3.0"})
-        if r.ok: return r.text
-    except Exception:
-        pass
-    return ""
+        with open(whitelist_yaml, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        return {"rss":["https://www.ynet.co.il/Integration/StoryRss2.xml"],
+                "domains_official":["ynet.co.il"]}
 
-def og_image(html_text: str) -> str:
+# ---------- Translation (multi-provider fallback) ----------
+def translate_chain(cfg) -> list[dict]:
+    tcfg = cfg.get("translate", {}) or {}
+    providers = tcfg.get("providers") or []
+    if not providers:
+        providers = [
+            {"type":"libretranslate", "url":"https://translate.astian.org/translate"},
+            {"type":"mymemory"},
+            {"type":"libretranslate", "url":"https://libretranslate.de/translate"}
+        ]
+    return providers
+
+def _translate_libre(url: str, text: str) -> str|None:
     try:
-        soup = BeautifulSoup(html_text or "", "html.parser")
-        for sel in [('meta',{'property':'og:image'}), ('meta',{'name':'og:image'}),
-                    ('meta',{'name':'twitter:image'}), ('meta',{'property':'twitter:image'})]:
-            tag = soup.find(*sel)
-            if tag:
-                u = tag.get("content") or ""
-                if u.startswith("http"): return u
-    except Exception:
-        pass
-    return ""
+        r = requests.post(url, json={"q": text, "source":"auto", "target":"he", "format":"text"}, timeout=15, headers={"User-Agent": _UA})
+        if r.ok:
+            return r.json().get("translatedText")
+    except Exception: pass
+    return None
 
-def looks_clickbait(title: str) -> bool:
-    patt = r"(לא תאמינו|כך תעשו|Click here|OMG|Shock|惊|!$|\?$)"
-    return bool(re.search(patt, title or "", re.I))
+def _translate_mymemory(text: str) -> str|None:
+    try:
+        endpoint = f"https://api.mymemory.translated.net/get?q={quote_plus(text)}&langpair=auto|he"
+        r = requests.get(endpoint, timeout=15, headers={"User-Agent": _UA})
+        if r.ok:
+            data = r.json()
+            out = data.get("responseData",{}).get("translatedText")
+            if out: return out
+    except Exception: pass
+    return None
 
-# ---------- Load configs ----------
-def load_cfg() -> Dict[str,Any]:
-    return read_yaml("config.yaml")
-
-def load_sources_regs(path: str) -> Dict[str,Any]:
-    y = read_yaml(path)
-    return y.get("sources",{})
-
-def load_topics(path: str) -> Dict[str,Any]:
-    y = read_yaml(path)
-    return y.get("topics",{})
+def translate_to_he(cfg, text: str) -> str:
+    if not text or is_hebrew(text): return text
+    chain = translate_chain(cfg)
+    for prov in chain:
+        typ = (prov.get("type") or "").lower()
+        if typ == "libretranslate":
+            url = prov.get("url") or "https://translate.astian.org/translate"
+            out = _translate_libre(url, text)
+        elif typ == "mymemory":
+            out = _translate_mymemory(text)
+        else:
+            out = None
+        if out and is_hebrew(out):
+            return out
+        time.sleep(0.3)
+    return text
 
 # ---------- Ingest ----------
-def ingest(cfg) -> List[Dict[str,Any]]:
-    src_list = read_yaml((cfg.get("sources") or {}).get("whitelist_file","data/sources_whitelist.yaml")).get("rss",[])
-    out = []
-    for feed_url in src_list:
+def ingest_items(cfg) -> list[dict]:
+    wl = (cfg.get("sources") or {}).get("whitelist_file","data/sources_whitelist.yaml")
+    src = load_sources(wl); rss_list = src.get("rss", [])
+    items = []
+    for feed_url in rss_list:
         try:
             fp = feedparser.parse(feed_url)
-            for e in fp.entries[:40]:
+            for e in fp.entries[:50]:
                 url = normalize_url(e.get("link") or "")
-                title = (e.get("title") or "").strip()
+                title = e.get("title") or ""
                 summary = clean_html(e.get("summary",""))
-                published = e.get("published_parsed") or e.get("updated_parsed")
-                ts = None
-                if published:
-                    try:
-                        ts = datetime.datetime.fromtimestamp(time.mktime(published), tz=ZoneInfo(cfg.get("timezone","Asia/Jerusalem")))
-                    except Exception:
-                        ts = now_il(cfg.get("timezone","Asia/Jerusalem"))
-                else:
-                    ts = now_il(cfg.get("timezone","Asia/Jerusalem"))
-                domain = urlparse(url).netloc
-                html_page = fetch_html(url)
+                html_page = fetch_text(url)
                 text = clean_html(html_page) if html_page else summary
-                image = og_image(html_page) if html_page else ""
-                out.append({
+                items.append({
                     "url": url, "title": title, "summary": summary, "text": text,
-                    "domain": domain, "published_ts": ts.isoformat(), "image": image, "feed": feed_url
+                    "source": urlparse(url).netloc, "feed": feed_url
                 })
         except Exception as ex:
             print("RSS error:", feed_url, ex)
-    return out
+    print(f"[DABUNA] fetched {len(items)} raw items from {len(rss_list)} feeds")
+    return items
 
-# ---------- Filter + translate + dedupe ----------
-def _tokens(s: str) -> set:
-    s = (s or "").lower()
-    s = re.sub(r"[^a-z\u0590-\u05FF0-9 ]+"," ",s)
-    s = re.sub(r"\s+"," ",s).strip()
+# ---------- Filtering / translate / anti-duplicates ----------
+import re as _re
+def _tokens(s: str) -> set[str]:
+    s = (s or "").lower(); s = _re.sub(r"[^a-z\u0590-\u05FF0-9 ]+"," ", s); s = _re.sub(r"\s+"," ", s).strip()
     return set(s.split()) if s else set()
 
 def similar(a: str, b: str) -> float:
     A, B = _tokens(a), _tokens(b)
     if not A or not B: return 0.0
     inter = len(A & B); union = len(A | B)
-    return inter/max(1,union)
+    return inter / max(1, union)
 
-def translate(cfg, text: str) -> str:
-    if not text or is_hebrew(text): return text
-    t = cfg.get("translate",{})
-    if not t.get("enabled",False): return text
-    try:
-        r = requests.post(t.get("service_url","https://translate.astian.org/translate"),
-                          json={"q":text, "source":"auto","target":"he","format":"text"}, timeout=15)
-        if r.ok:
-            return r.json().get("translatedText", text)
-    except Exception:
-        pass
-    return text
+def filter_and_translate(cfg, items: list[dict]) -> list[dict]:
+    out = []
+    min_title_len = int((cfg.get("filters") or {}).get("min_title_len", 16))
+    tcfg = cfg.get("translate", {}); translate_limit = int(tcfg.get("max_per_run", 12))
+    translated = 0; seen = set(); kept_titles = []
+    require_hebrew = bool((cfg.get("filters") or {}).get("require_hebrew", False))
 
-def preprocess(cfg, items: List[Dict[str,Any]]) -> List[Dict[str,Any]]:
-    f = cfg.get("filters",{})
-    min_len = int(f.get("min_title_len",16))
-    drops = {d.lower() for d in f.get("drop_keywords",[])}
-
-    seen = set()
-    titles = []
-    kept = []
-    tcfg = cfg.get("translate",{}); lim = int(tcfg.get("max_per_run",0)); cnt=0
     for it in items:
-        title = (it["title"] or "").strip()
-        if len(title) < min_len: continue
-        low = title.lower()
-        if any(d in low for d in drops): continue
-        k = url_key(it["url"])
+        title = (it.get("title") or "").strip()
+        summary = (it.get("summary") or "").strip()
+        text = (it.get("text") or "").strip()
+        url = it.get("url") or ""
+
+        if len(title) < min_title_len: continue
+
+        k = url_key(url)
         if k in seen: continue
-        # similar title
-        if any(similar(title, t)>=0.80 for t in titles): continue
-        # translation
-        if not is_hebrew(title) and cnt<lim and tcfg.get("enabled",False):
-            title = translate(cfg, title[:240]); cnt+=1
-        it["title"] = title
-        kept.append(it); seen.add(k); titles.append(title)
-    return kept
 
-# ---------- Scoring ----------
-def topic_weight(topics: Dict[str,Any], text: str) -> int:
-    tx = (text or "").lower()
-    best = 0
-    for name, t in topics.items():
-        w = int(t.get("weight",50))
-        kws = [k.lower() for k in (t.get("keywords") or [])]
-        if any(k in tx for k in kws):
-            best = max(best, w)
-    return best
+        dup = any(similar(prev, title) >= 0.77 for prev in kept_titles)
+        if dup: continue
 
-def source_score(regs: Dict[str,Any], domain: str) -> int:
-    r = regs.get(domain) or regs.get(domain.lower()) or {}
-    trust = int(r.get("trust", 50))
-    reach = int(r.get("reach", 50))
-    boost = int(r.get("boost", 0))
-    return max(0, min(100, round(0.6*trust + 0.3*reach + boost)))
+        need_he = (not is_hebrew(title) and not is_hebrew(summary) and not is_hebrew(text))
+        if need_he:
+            if translated < translate_limit and tcfg.get("enabled", True):
+                title = translate_to_he(cfg, title[:240])
+                summary = translate_to_he(cfg, summary[:600])
+                translated += 1
+            elif require_hebrew:
+                continue
 
-def freshness_score(published_iso: str, tz: str) -> int:
-    try:
-        ts = datetime.datetime.fromisoformat(published_iso)
-    except Exception:
-        ts = now_il(tz)
-    delta = now_il(tz) - ts
-    hours = max(0.1, delta.total_seconds()/3600.0)
-    # 0h -> 100, 24h -> ~60, 72h -> ~40
-    sc = 100 * (1/(1+0.05*hours*hours**0.25))
-    return int(max(20, min(100, sc)))
+        it["title"] = title; it["summary"] = summary
+        out.append(it); seen.add(k); kept_titles.append(title)
 
-def engagement_score(it: Dict[str,Any]) -> int:
-    s = 50
-    if it.get("image"): s += 10
-    if len(it.get("title","")) >= 80: s += 6
-    if looks_clickbait(it.get("title","")): s -= 12
-    return max(0, min(100, s))
+    print(f"[DABUNA] kept {len(out)} items (translated {translated})")
+    return out
 
-def total_score(cfg, regs, topics, it):
-    tz = cfg.get("timezone","Asia/Jerusalem")
-    S = source_score(regs, it["domain"])
-    T = topic_weight(topics, it["title"]+" "+it.get("summary",""))
-    F = freshness_score(it["published_ts"], tz)
-    E = engagement_score(it)
-    # weights tuned for “audience today”
-    total = 0.35*S + 0.30*T + 0.20*F + 0.15*E
-    return int(round(total))
+# ---------- Post news ----------
+def post_news_items(cfg, token, items: list[dict]):
+    dest = (cfg.get("channels") or {}).get("news","@DabunaNews")
+    web = cfg.get("web") or {}
 
-# ---------- Posting ----------
-def hook_for(title: str, emojis: Dict[str,str]) -> str:
-    low = title.lower()
-    if any(k in low for k in ["breaking","urgent","בהול","דחוף"]): return emojis.get("breaking","")
-    if any(k in low for k in ["update","עדכון"]): return emojis.get("update","")
-    if any(k in low for k in ["analysis","פרשנות","ניתוח"]): return emojis.get("analysis","")
-    if any(k in low for k in ["econom","inflation","שוק","בורסה","מדד","מחיר"]): return emojis.get("economy","")
-    if any(k in low for k in ["security","ירי","תקיפה","חמאס","חיזבאללה","חזבאללה","iran","איראן"]): return emojis.get("security","")
-    if any(k in low for k in ["politic","בחירות","ממשלה","כנסת","שרים","נשיא"]): return emojis.get("politics","")
-    return emojis.get("default","")
+    storage_dir = cfg.get("storage_dir","storage"); ensure_dir(storage_dir)
+    posted_path = os.path.join(storage_dir,"posted_urls.json")
+    posted = read_json(posted_path, {"keys":[]}); keys = set(posted.get("keys",[]))
 
-def hashtags_for(text: str, max_tags: int) -> List[str]:
-    words = re.findall(r"[A-Za-z\u0590-\u05FF]{3,}", text)
-    stop = set("the and for with from this that היו היה כדי אבל לכן כאשר אשר גם מאוד יותר תוך אחרי לפני בגלל אם ללא בין אין עם או הוא היא הם הן על של מה איך למה כמה לכן מי לא כן אנו אנחנו אני אתם אתן אתה את".split())
-    uniq = []
-    for w in words:
-        wl = w.lower()
-        if wl in stop: continue
-        if wl not in uniq: uniq.append(wl)
-    return [f"#{w.capitalize()}" for w in uniq[:max_tags]]
+    pub = cfg.get("publish") or {}
+    sent = 0; max_per_run = int(pub.get("max_per_run",12)); sleep_s = int(pub.get("sleep_seconds",25))
+    allow_dups = bool(pub.get("allow_duplicates", False))
 
-def inline_keyboard(url: str) -> list:
-    return [[{"text":"פתח כתבה ↗","url":url}]]
+    for it in items:
+        if sent >= max_per_run: break
+        k = url_key(it["url"])
+        if not allow_dups and k in keys: continue
 
-def caption_for(cfg, it) -> Tuple[str, Optional[list]]:
-    e = cfg.get("engagement") or {}
-    brand = (e.get("brand_prefix") or "").strip()
-    emojis = (e.get("emoji_pack") or {})
-    add_hook = bool(e.get("add_hook", True))
-    add_hash = bool(e.get("add_hashtags", True))
-    max_tags = int(e.get("hashtag_max", 3))
-
-    title = it["title"]
-    hook = hook_for(title, emojis) if add_hook else ""
-    prefix = " ".join([p for p in [brand, hook] if p]).strip()
-    prefix = f"{prefix}: " if prefix else ""
-
-    src = safe(it.get("domain",""))
-    tags = " ".join(hashtags_for(title, max_tags)) if add_hash else ""
-
-    lines = [f"<b>{safe(prefix + title)}</b>", f"<i>{src}</i>"]
-    if it.get("summary"):
-        lines.append(safe(it["summary"][:220]))
-    if tags: lines.append(tags)
-    return "\n".join(lines).strip(), inline_keyboard(it["url"])
-
-def publish_news(cfg, token, items):
-    ch = (cfg.get("channels") or {}).get("news", "@DabunaNews")
-    p = cfg.get("publish") or {}
-    max_per = int(p.get("max_per_run", 12))
-    sleep_s = int(p.get("sleep_seconds", 2))
-    send_images = bool((cfg.get("engagement") or {}).get("send_images", True))
-
-    sent = 0
-    for it in items[:max_per]:
-        caption, kb = caption_for(cfg, it)
+        title = it["title"] or ""
+        summary = (it["summary"] or it["text"] or "")[:220]
+        source = it["source"]
+        msg = (
+            f"🗞️ <b>{safe(title)}</b>\n"
+            f"TL;DR: {safe(summary)}\n\n"
+            f"מקור: {safe(source)}\n"
+            f"🔗 {it['url']}\n"
+            f"#דבונה #חדשות #ישראל #כנסת"
+        )
+        buttons = [
+            [{"text":"📊 מדד","url":web.get("dashboard_url","")}],
+            [{"text":"🔗 שתפו","url":web.get("share_url","")}],
+        ]
         try:
-            if send_images and it.get("image"):
-                tg_photo(token, ch, it["image"], caption, kb)
-            else:
-                tg_send(token, ch, caption+"\n"+safe(it["url"]), kb)
-            sent += 1
+            tg_send(token, dest, msg, buttons)
+            sent += 1; keys.add(k)
+            posted["keys"] = list(keys); write_json(posted_path, posted)
             time.sleep(sleep_s)
         except Exception as ex:
-            print("publish error:", ex)
-    print("[DABUNA] posted", sent, "items")
+            print("post_news_items error:", ex)
 
-# ---------- Index (people) ----------
+    print(f"[DABUNA] posted {sent} news")
+
+# ---------- Index compute ----------
+DIGITS = _re.compile(r"\d+")
+DATES  = _re.compile(r"(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})")
+
 def load_people(csv_path="data/politicians.csv"):
-    ppl = []
-    try:
-        with open(csv_path, "r", encoding="utf-8") as f:
-            for row in csv.DictReader(f):
-                aliases = [a.strip() for a in (row.get("aliases","") or "").split(";") if a.strip()]
-                ppl.append({"id": row["id"], "name": row["name"], "party": row["party"], "role": row["role"], "aliases":[row["name"].strip(), *aliases]})
-    except FileNotFoundError:
-        pass
+    ppl=[]
+    with open(csv_path,"r",encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            aliases = [a.strip() for a in (row.get("aliases","") or "").split(";") if a.strip()]
+            aliases = [row.get("name","").strip(), *aliases]
+            ppl.append({"id":row["id"],"name":row["name"],"party":row["party"],
+                        "role":row["role"],"aliases":aliases})
     return ppl
+
+def specificity(text:str) -> float:
+    words = max(1, len((text or "").split()))
+    nums = len(DIGITS.findall(text or "")) + len(DATES.findall(text or ""))
+    return 100.0 * nums / (words/100.0)
 
 def mentions(text:str, person:dict) -> bool:
     t = text or ""
     return any(a and a in t for a in person["aliases"])
 
-def compute_people_index(items):
-    people = load_people()
-    if not people: return []
-    per = {}
+def indep_domains(urls): return len({urlparse(u).netloc.split(":")[0].lower() for u in urls if u})
+
+def score_transparency(flags): 
+    if not flags: return 0.0
+    return 100.0 * sum(1 for b in flags if b)/len(flags)
+
+def score_fact_integrity(group, avg_spec):
+    if not group: return 0.0
+    indep = indep_domains([g["url"] for g in group])
+    base = 50.0 + min(40.0, (indep-1)*15.0)
+    bonus = min(15.0, avg_spec/10.0)
+    return min(100.0, base+bonus)
+
+def score_consistency(headlines):
+    if not headlines: return 0.0
+    toks = [set((h or "").split()) for h in headlines]
+    inter = set.intersection(*toks) if len(toks)>=2 else toks[0]
+    return max(40.0, min(100.0, 60.0 + len(inter)*10.0))
+
+def compute_rows(items: list[dict]) -> list[dict]:
+    people = load_people("data/politicians.csv")
     for it in items:
-        txt = (it.get("title","")+" "+it.get("summary","")).strip()
+        it["specificity"] = specificity(it.get("text") or it.get("summary") or "")
+        it["is_primary"] = True
+
+    per={}
+    for it in items:
+        txt = (it.get("title") or "") + " " + (it.get("summary") or "")
         for p in people:
             if mentions(txt, p):
                 per.setdefault(p["id"], {"person":p, "items":[]})
                 per[p["id"]]["items"].append(it)
-    rows = []
+
+    rows=[]
     for pid, data in per.items():
-        p = data["person"]; group = data["items"]
-        unique_domains = len({g["domain"] for g in group})
-        # naive: more independent coverage → higher score
-        score = min(100, 50 + unique_domains*10)
-        rows.append({"id":pid,"name":p["name"],"party":p["party"],"role":p["role"],"IndexScore":score,"count":len(group)})
+        p=data["person"]; group=data["items"]
+        avg_spec=sum(it["specificity"] for it in group)/max(1,len(group))
+        headlines=[g.get("title","").strip() for g in group][:5]
+        Consistency = score_consistency(headlines)
+        FactIntegrity = score_fact_integrity(group, avg_spec)
+        Transparency = score_transparency([g.get("is_primary", False) for g in group])
+        Correction = 0.0
+        Index = 0.45*Consistency + 0.35*FactIntegrity + 0.10*Transparency + 0.10*Correction
+        rows.append({"id":pid,"name":p["name"],"party":p["party"],"role":p["role"],
+                     "Consistency":Consistency,"FactIntegrity":FactIntegrity,
+                     "Transparency":Transparency,"CorrectionResponsiveness":Correction,
+                     "IndexScore":Index,"headlines":headlines})
     rows.sort(key=lambda r: r["IndexScore"], reverse=True)
     return rows
 
-def post_people_index(cfg, token, rows):
+def post_daily_index(cfg, token, rows: list[dict]):
     if not rows: return
-    ch = (cfg.get("channels") or {}).get("rating", "@DabunaRating")
+    dest = (cfg.get("channels") or {}).get("rating","@DabunaRating")
     d = now_il().strftime("%d.%m.%Y")
-    lines = [f"📊 <b>מדד דמויות – {d}</b>"]
-    for i, r in enumerate(rows[:10], 1):
-        lines.append(f"{i}) <b>{safe(r['name'])}</b> — {r['IndexScore']}/100 (מקורות עצמאיים: ~{r['count']})")
-    tg_send(token, ch, "\n".join(lines))
-
-# ---------- Source Index (weekly) ----------
-def compute_source_index(items, regs):
-    agg = {}
-    for it in items:
-        d = it["domain"]
-        base = source_score(regs, d)
-        agg.setdefault(d, {"domain":d, "base": base, "n":0})
-        agg[d]["n"] += 1
-    rows = []
-    for d, rec in agg.items():
-        # activity-weighted source score
-        idx = min(100, int(round(0.8*rec["base"] + 0.2*min(100, rec["n"]*5))))
-        rows.append({"domain": d, "IndexScore": idx, "posts": rec["n"]})
-    rows.sort(key=lambda r: r["IndexScore"], reverse=True)
-    return rows
-
-def post_source_index(cfg, token, rows):
-    if not rows: return
-    ch = (cfg.get("channels") or {}).get("rating", "@DabunaRating")
-    lines = ["🏷️ <b>מדד מקורות — השבוע</b>"]
-    for i, r in enumerate(rows[:10], 1):
-        lines.append(f"{i}) <code>{safe(r['domain'])}</code> — {r['IndexScore']}/100 (פרסומים: {r['posts']})")
-    tg_send(token, ch, "\n".join(lines))
+    lines=[f"📊 <b>מדד אמינות/עקביות – {d}</b>"]
+    for i,r in enumerate(rows[:10],1):
+        lines.append(
+            f"{i}) <b>{safe(r['name'])}</b> — Index {r['IndexScore']:.0f}/100 "
+            f"(עק׳ {r['Consistency']:.0f} | אמ׳ {r['FactIntegrity']:.0f} | שק׳ {r['Transparency']:.0f})"
+        )
+    lines.append("#דבונה #מדד_דבונה #FactCheck #ישראל #כנסת")
+    buttons=[[{"text":"📊 מדד","url":(cfg.get('web') or {}).get('dashboard_url','')}],
+             [{"text":"🔗 שתפו","url":(cfg.get('web') or {}).get('share_url','')}] ]
+    tg_send(token, dest, "
+".join(lines), buttons)
 
 # ---------- Commands ----------
 def cmd_daily(cfg, token):
-    tz = cfg.get("timezone","Asia/Jerusalem")
-    regs = load_sources_regs((cfg.get("sources") or {}).get("registry_file","data/sources_registry.yaml"))
-    topics = load_topics((cfg.get("topics") or {}).get("file","data/topics.yaml"))
-    raw = ingest(cfg)
-    items = preprocess(cfg, raw)
+    items_all = ingest_items(cfg)
+    items = filter_and_translate(cfg, items_all)
 
-    # scoring
-    for it in items:
-        it["score"] = total_score(cfg, regs, topics, it)
-    # per-source cap
-    cap = int((cfg.get("publish") or {}).get("per_source_cap", 0)) or 0
-    counts = {}
-    ranked = []
-    for it in sorted(items, key=lambda x: x["score"], reverse=True):
-        d = it["domain"]
-        counts[d] = counts.get(d, 0) + 1
-        if cap and counts[d] > cap:
-            continue
-        ranked.append(it)
+    storage_dir = cfg.get("storage_dir","storage"); ensure_dir(storage_dir)
+    write_json(os.path.join(storage_dir,"latest.json"), {"date":now_il().isoformat(),"rows":items})
 
-    publish_news(cfg, token, ranked)
-    ppl = compute_people_index(ranked)
-    post_people_index(cfg, token, ppl)
+    post_news_items(cfg, token, items)
 
-    # persist for weekly
-    storage = cfg.get("storage_dir","storage"); ensure_dir(storage)
-    write_json(os.path.join(storage,"last_items.json"), ranked)
+    rows = compute_rows(items)
+    write_json(os.path.join(storage_dir, f"daily_scores_{now_il().date()}.json"), rows)
+    write_json(os.path.join(storage_dir,"latest_scores.json"), {"date":now_il().isoformat(),"rows":rows})
+    print("[DABUNA] daily finished.")
 
 def cmd_weekly(cfg, token):
-    storage = cfg.get("storage_dir","storage")
-    ranked = read_json(os.path.join(storage,"last_items.json"), [])
-    regs = load_sources_regs((cfg.get("sources") or {}).get("registry_file","data/sources_registry.yaml"))
-    rows = compute_source_index(ranked, regs)
-    post_source_index(cfg, token, rows)
+    storage_dir = cfg.get("storage_dir","storage")
+    latest = read_json(os.path.join(storage_dir,"latest_scores.json"), {})
+    rows = latest.get("rows") or []
+    if not rows:
+        items_all = ingest_items(cfg); items = filter_and_translate(cfg, items_all)
+        rows = compute_rows(items)
+    post_daily_index(cfg, token, rows)
+    print("[DABUNA] weekly index posted.")
 
 def cmd_miniapp(cfg, token):
-    ch = (cfg.get("channels") or {}).get("news","@DabunaNews")
-    tg_send(token, ch, "🧩 DABUNA MiniApp: עודכן.")
+    web = cfg.get("web") or {}
+    dest = (cfg.get("channels") or {}).get("news","@DabunaNews")
+    msg = "🧩 <b>Dabuna Mini-App</b>\nעודכן בהצלחה. פתחו את המדד והדשבורד:"
+    buttons=[[{"text":"📊 מדד","url":web.get("dashboard_url","")}],
+             [{"text":"🔗 שתפו","url":web.get("share_url","")}] ]
+    tg_send(token, dest, msg, buttons)
+    print("[DABUNA] miniapp posted.")
 
 def cmd_tick(cfg, token):
-    # keep simple: only log
-    print("[DABUNA] tick OK.")
+    t = now_il(); hhmm = t.strftime("%H:%M"); weekday = t.weekday()
+    if hhmm == "18:00": cmd_daily(cfg, token)
+    if weekday == 4 and hhmm == "14:00": cmd_weekly(cfg, token)
+    print(f"[DABUNA] tick {hhmm} – nothing else to do.")
 
-# ---------- Main ----------
+# ---------- main ----------
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
@@ -467,10 +419,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     cfg = load_cfg()
-    token = os.getenv("TELEGRAM_BOT_TOKEN","").strip()
-    if not token:
-        raise SystemExit("Missing TELEGRAM_BOT_TOKEN env")
-    if args.cmd == "daily":   cmd_daily(cfg, token)
+    token = os.getenv("TELEGRAM_BOT_TOKEN","")
+    if not token: raise SystemExit("Missing TELEGRAM_BOT_TOKEN env")
+
+    if args.cmd == "daily": cmd_daily(cfg, token)
     elif args.cmd == "weekly": cmd_weekly(cfg, token)
     elif args.cmd == "miniapp": cmd_miniapp(cfg, token)
     else: cmd_tick(cfg, token)

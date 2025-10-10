@@ -2,62 +2,30 @@ channels:
   news: "@DabunaNews"
   rating: "@DabunaRating"
 
-timezone: "Asia/Jerusalem"
+storage_dir: "storage"
+
+web:
+  dashboard_url: "https://eduardlib.github.io/DABUNA/"
+  share_url: "https://t.me/share/url?url=https://eduardlib.github.io/DABUNA/"
 
 sources:
   whitelist_file: "data/sources_whitelist.yaml"
-  registry_file: "data/sources_registry.yaml"
 
 filters:
   min_title_len: 16
   require_hebrew: false
-  drop_keywords: ["opinion", "דעה", "טור", "פרסומת"]
-
-dedupe:
-  state_file: ".state.jsonl"
-  max_memory: 10000
 
 translate:
   enabled: true
-  max_per_run: 6
-  service_url: "https://translate.astian.org/translate"
+  max_per_run: 12
+  providers:
+    - type: libretranslate
+      url: https://translate.astian.org/translate
+    - type: mymemory
+    - type: libretranslate
+      url: https://libretranslate.de/translate
 
 publish:
-  max_per_run: 14
-  sleep_seconds: 2
+  max_per_run: 12
+  sleep_seconds: 25
   allow_duplicates: false
-  link_preview: true
-  per_source_cap: 5
-  per_channel:
-    news: 12
-    rating: 4
-
-engagement:
-  brand_prefix: "🟡 דבונה"
-  add_hook: true
-  add_hashtags: true
-  hashtag_max: 3
-  inline_buttons: true
-  send_images: true
-  emoji_pack:
-    breaking: "🚨"
-    update:   "🆕"
-    analysis: "🧠"
-    economy:  "💹"
-    security: "🛡️"
-    politics: "🏛️"
-    default:  "🗞️"
-
-weekly:
-  enabled: true
-  top_n: 10
-  window_days: 7
-
-daily:
-  enabled: true
-  window_hours: 24
-
-topics:
-  file: "data/topics.yaml"
-
-storage_dir: "storage"
