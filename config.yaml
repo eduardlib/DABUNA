@@ -1,68 +1,54 @@
-# DABUNA – Production config (template)
-# Fill your sources and adjust options. Secrets are passed via GitHub Actions 'secrets' (token), not here.
 channels:
   news: "@DabunaNews"
   rating: "@DabunaRating"
 
 timezone: "Asia/Jerusalem"
 
+# רשימת מקורות נשארת בניהול דרך קובץ ה-whitelist שלך
 sources:
-  # Example RSS feeds – replace/expand as needed
-  - name: "Times of Israel – Israel & Region"
-    url: "https://www.timesofisrael.com/israel-region/feed/"
-    lang_hint: "en"
-  - name: "ynet – News"
-    url: "https://www.ynet.co.il/Integration/StoryRss1854.xml"
-    lang_hint: "he"
+  whitelist_file: "data/sources_whitelist.yaml"
 
 filters:
   min_title_len: 16
-  require_hebrew: false            # if true, only Hebrew titles pass
+  require_hebrew: false
   drop_keywords: ["opinion", "דעה", "טור", "פרסומת"]
 
 dedupe:
-  # Keep a small local state file to avoid re-posting same links/titles
-  state_file: ".state.jsonl"
-  max_memory: 5000                 # keep last N items in memory
+  # נשארת עם state בקבצי storage/ דרך posted_urls.json ועם מפתח URL מנורמל
+  # (אין צורך לשנות אם אתה מרוצה מהזרימה הנוכחית)
+  max_memory: 8000
 
 translate:
   enabled: true
-  target_lang: "he"
-  # First successful translator wins
-  chain:
-    - type: "libretranslate"
-      url: "https://translate.astian.org/translate"
-    # - type: "dummy"    # add more providers here if you have them
+  max_per_run: 5
+  service_url: "https://translate.astian.org/translate"
 
 publish:
   max_per_run: 12
   sleep_seconds: 2
   allow_duplicates: false
   link_preview: true
-  # Optional per-channel limits
-  per_channel:
-    news: 10
-    rating: 4
+  per_source_cap: 5      # איזון: לא יותר מ-5 פריטים למקור בהרצה
 
-rating:
-  enabled: true
-  # naive credibility scoring (0..100)
-  rules:
-    base: 50
-    boosts:
-      long_title: 5           # + if title length >= 80
-      has_image: 5
-      local_source: 10        # + if source domain in 'trusted_domains'
-      hebrew: 5
-    penalties:
-      clickbait: 10           # - if looks clickbaity
-      short_title: 10         # - if title length < 32
-  trusted_domains: ["www.ynet.co.il", "www.timesofisrael.com", "www.haaretz.co.il", "www.maariv.co.il"]
+web:
+  dashboard_url: ""
+  share_url: ""
 
-miniapp:
-  # Send a Telegram menu + an inline "Open MiniApp" button
-  title: "DABUNA — חדשות ומדד"
-  description: "חדשות מסוננות + מדד אמינות (אלפא)."
+engagement:
+  brand_prefix: "🟡 דבונה"
+  add_hook: true
+  add_hashtags: true
+  hashtag_max: 3
+  inline_buttons: true
+  send_images: true
+  emoji_pack:
+    breaking: "🚨"
+    update:   "🆕"
+    analysis: "🧠"
+    economy:  "💹"
+    security: "🛡️"
+    politics: "🏛️"
+    default:  "🗞️"
 
 weekly:
   enabled: true
@@ -72,3 +58,5 @@ weekly:
 daily:
   enabled: true
   window_hours: 24
+
+storage_dir: "storage"
