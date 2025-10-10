@@ -1,10 +1,8 @@
 name: Weekly (manual)
 on:
-  schedule:
-    - cron: "0 11 * * 5"
   workflow_dispatch: {}
 permissions:
-  contents: write
+  contents: read
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -14,7 +12,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
-      - name: Weekly
-        run: python run.py weekly
+      - name: Run weekly (manual)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: python run.py weekly
