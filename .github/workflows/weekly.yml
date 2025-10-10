@@ -1,20 +1,20 @@
-name: Weekly
+name: Dabuna Weekly
 on:
   schedule:
-    - cron: "0 11 * * 5"   # Friday 14:00 Asia/Jerusalem (UTC+3)
+    - cron: "0 11 * * 5"
   workflow_dispatch: {}
+
 permissions:
-  contents: read
+  contents: write
+
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+        with: { python-version: "3.11" }
       - run: pip install -r requirements.txt
-      - name: Run weekly
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      - name: Weekly
+        env: { TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }} }
         run: python run.py weekly

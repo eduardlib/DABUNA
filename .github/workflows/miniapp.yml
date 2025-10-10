@@ -1,20 +1,14 @@
-name: MiniApp (daily)
-on:
-  schedule:
-    - cron: "30 14 * * *"  # 17:30 Asia/Jerusalem
-  workflow_dispatch: {}
-permissions:
-  contents: read
+name: Dabuna Miniapp
+on: { workflow_dispatch: {} }
+
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+        with: { python-version: "3.11" }
       - run: pip install -r requirements.txt
-      - name: MiniApp daily refresh
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      - name: Miniapp
+        env: { TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }} }
         run: python run.py miniapp

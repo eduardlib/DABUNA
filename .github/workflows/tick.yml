@@ -1,20 +1,19 @@
-name: Tick (hourly)
+name: Dabuna Tick Hourly
 on:
   schedule:
     - cron: "0 * * * *"
   workflow_dispatch: {}
-permissions:
-  contents: read
+
+permissions: { contents: read }
+
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+        with: { python-version: "3.11" }
       - run: pip install -r requirements.txt
       - name: Tick
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        env: { TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }} }
         run: python run.py tick
