@@ -1,25 +1,5 @@
 rss:
-  - https://www.ynet.co.il/Integration/StoryRss2.xml
-  - https://rss.walla.co.il/feed/1
-  - https://www.maariv.co.il/Rss/RssChadashot
-  - https://rss.haaretz.co.il/1-1
-  - https://rss.globes.co.il/news
-  - https://www.israelhayom.co.il/rss.xml
-  - https://www.kikar.co.il/rss
-  - https://www.srugim.co.il/feed
-  - https://www.n12.co.il/rss.xml
-  - https://www.kan.org.il/Rss/Rss.aspx?0r4VQ=HgG
-  - https://feeds.bbci.co.uk/news/world/middle_east/rss.xml
-
-domains_official:
-  - ynet.co.il
-  - walla.co.il
-  - maariv.co.il
-  - haaretz.co.il
-  - globes.co.il
-  - israelhayom.co.il
-  - kikar.co.il
-  - srugim.co.il
-  - n12.co.il
-  - kan.org.il
-  - bbc.co.uk
+  - "https://www.ynet.co.il/Integration/StoryRss2.xml"
+  - "https://www.timesofisrael.com/israel-region/feed/"
+  - "https://www.haaretz.co.il/rss"
+  - "https://www.maariv.co.il/Rss/RssChadashot"

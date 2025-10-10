@@ -1,0 +1,18 @@
+# Topic priorities to align with audience interests today.
+# weight: importance (0-100). keywords: lower-case substrings for quick match.
+topics:
+  security:
+    weight: 95
+    keywords: ["ירי","תקיפה","פיגוע","חמאס","חיזבאללה","ירי רקטות","צהל","פשיטה","גבול","איראן","iran","hezbollah"]
+  economy:
+    weight: 80
+    keywords: ["אינפלציה","מדד","בורסה","ריבית","דולר","מחירי","צמיחה","שקל","ייט","מסים","נדל","משכנתא"]
+  politics:
+    weight: 70
+    keywords: ["בחירות","כנסת","ממשלה","שר","נשיא","קואליציה","אופוזיציה","חקיקה","רפורמה"]
+  tech_ai:
+    weight: 60
+    keywords: ["בינה מלאכותית","AI","צ׳אט","מודל שפה","סטארטאפ","גיוס"]
+  society:
+    weight: 55
+    keywords: ["חינוך","בריאות","אלימות","תנועה","פקקים","משטרה"]

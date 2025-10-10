@@ -1,0 +1,31 @@
+# Each entry describes a source/domain with trust score (0-100), bias, geo, and optional boosts
+# trust: editorial reliability; reach: audience importance; boost: additional manual nudge (-20..+20)
+sources:
+  "www.ynet.co.il":
+    name: "Ynet"
+    trust: 78
+    bias: "center"
+    geo: "IL"
+    reach: 85
+    boost: 4
+  "www.timesofisrael.com":
+    name: "Times of Israel"
+    trust: 74
+    bias: "center"
+    geo: "IL"
+    reach: 70
+    boost: 3
+  "www.haaretz.co.il":
+    name: "Haaretz"
+    trust: 80
+    bias: "center-left"
+    geo: "IL"
+    reach: 65
+    boost: 0
+  "www.maariv.co.il":
+    name: "Maariv"
+    trust: 68
+    bias: "center-right"
+    geo: "IL"
+    reach: 60
+    boost: 0
