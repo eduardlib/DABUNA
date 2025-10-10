@@ -4,9 +4,9 @@ channels:
 
 timezone: "Asia/Jerusalem"
 
-# רשימת מקורות נשארת בניהול דרך קובץ ה-whitelist שלך
 sources:
   whitelist_file: "data/sources_whitelist.yaml"
+  registry_file: "data/sources_registry.yaml"
 
 filters:
   min_title_len: 16
@@ -14,25 +14,23 @@ filters:
   drop_keywords: ["opinion", "דעה", "טור", "פרסומת"]
 
 dedupe:
-  # נשארת עם state בקבצי storage/ דרך posted_urls.json ועם מפתח URL מנורמל
-  # (אין צורך לשנות אם אתה מרוצה מהזרימה הנוכחית)
-  max_memory: 8000
+  state_file: ".state.jsonl"
+  max_memory: 10000
 
 translate:
   enabled: true
-  max_per_run: 5
+  max_per_run: 6
   service_url: "https://translate.astian.org/translate"
 
 publish:
-  max_per_run: 12
+  max_per_run: 14
   sleep_seconds: 2
   allow_duplicates: false
   link_preview: true
-  per_source_cap: 5      # איזון: לא יותר מ-5 פריטים למקור בהרצה
-
-web:
-  dashboard_url: ""
-  share_url: ""
+  per_source_cap: 5
+  per_channel:
+    news: 12
+    rating: 4
 
 engagement:
   brand_prefix: "🟡 דבונה"
@@ -58,5 +56,8 @@ weekly:
 daily:
   enabled: true
   window_hours: 24
+
+topics:
+  file: "data/topics.yaml"
 
 storage_dir: "storage"
