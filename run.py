@@ -1,480 +1,365 @@
-# DABUNA – חדשות + מדד (Weekly) + Miniapp — FULL
+# DABUNA — Production Bot
 from __future__ import annotations
-import os, re, csv, json, time, html, datetime
-from urllib.parse import urlparse, parse_qs, urlunparse
+import os, re, json, time, html, textwrap, hashlib, datetime
+from typing import List, Dict, Any, Optional, Tuple
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 import requests, yaml, feedparser
 from bs4 import BeautifulSoup
 
-# ---------- Utils ----------
-def now_il() -> datetime.datetime:
-    return datetime.datetime.now(ZoneInfo("Asia/Jerusalem"))
+# ---------------- Utilities ----------------
+def now_il(tz:str) -> datetime.datetime:
+    return datetime.datetime.now(ZoneInfo(tz))
 
 def safe(s: str) -> str:
     return html.escape(s or "", quote=False)
 
-def ensure_dir(p: str):
-    if p and p != ".":
-        os.makedirs(p, exist_ok=True)
-
-def read_json(path: str, default):
+def domain_of(url: str) -> str:
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        return urlparse(url).netloc.lower()
     except Exception:
-        return default
+        return ""
 
-def write_json(path: str, data):
-    ensure_dir(os.path.dirname(path) or ".")
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-def load_cfg():
-    with open("config.yaml", "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+def looks_clickbait(title: str) -> bool:
+    patt = r"(לא תאמינו|הסיבה|כך תעשו|Click here|OMG|Shock|惊|!$|\?$)"
+    return bool(re.search(patt, title or "", re.I))
 
 def is_hebrew(text: str) -> bool:
     return bool(re.search(r"[\u0590-\u05FF]", text or ""))
 
-# ---------- Telegram ----------
-def tg_send(token, chat_id, html_text, buttons=None):
-    """
-    שולח HTML לטלגרם, עם חלוקת הודעות (4096) ו-429 backoff.
-    אם DRY_RUN=1 — לא שולח בפועל (רק לוג).
-    """
-    if os.getenv("DRY_RUN", "0") == "1":
-        print("[DRY_RUN] tg_send skipped (len=%d)" % len(html_text or ""))
-        return {"ok": True, "dry_run": True}
+def read_yaml(path: str) -> Dict[str, Any]:
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
 
-    CHUNK_LIMIT = 3900  # מרווח בטוח
-    base_payload = {
-        "chat_id": chat_id,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": False,
-    }
-
-    txt = html_text or ""
-    chunks = []
-    while len(txt) > CHUNK_LIMIT:
-        cut = txt.rfind("\n", 0, CHUNK_LIMIT)
-        if cut < CHUNK_LIMIT // 2:
-            cut = CHUNK_LIMIT
-        chunks.append(txt[:cut])
-        txt = txt[cut:]
-    chunks.append(txt)
-
-    last_resp = None
-    for i, part in enumerate(chunks):
-        payload = dict(base_payload)
-        payload["text"] = part
-        if buttons and i == len(chunks) - 1:
-            payload["reply_markup"] = {"inline_keyboard": buttons}
-        while True:
-            r = requests.post(
-                f"https://api.telegram.org/bot{token}/sendMessage",
-                headers={"Content-Type": "application/json"},
-                data=json.dumps(payload),
-                timeout=30,
-            )
-            if r.status_code == 429:
+def load_state(path: str) -> Dict[str, Any]:
+    mem: Dict[str, Any] = {}
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
                 try:
-                    retry = r.json().get("parameters", {}).get("retry_after", 30)
+                    obj = json.loads(line)
+                    mem[obj.get("key")] = obj
                 except Exception:
-                    retry = 30
-                time.sleep(int(retry) + 1)
-                continue
-            if not r.ok:
-                raise RuntimeError(f"Telegram API error: {r.status_code} {r.text}")
-            last_resp = r.json()
-            break
-    return last_resp
+                    continue
+    return mem
 
-# ---------- URL normalize & keys ----------
-_SKIP_QS = {"utm_source","utm_medium","utm_campaign","utm_term","utm_content",
-            "utm_name","gclid","fbclid","igshid","mc_cid","mc_eid","ref"}
+def save_state(path: str, mem: Dict[str, Any]):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        for k, v in mem.items():
+            f.write(json.dumps(v, ensure_ascii=False) + "\n")
+    os.replace(tmp, path)
 
-def normalize_url(u: str) -> str:
-    """
-    מסיר פרמטרים שיווקיים ומאחד כתובת ל-key יציב למניעת כפילויות.
-    """
+def sha1(s: str) -> str:
+    return hashlib.sha1((s or "").encode("utf-8")).hexdigest()
+
+def http_get(url: str, timeout: int = 20) -> Optional[str]:
     try:
-        p = urlparse(u)
-        q = parse_qs(p.query, keep_blank_values=False)
-        q = {k:v for k,v in q.items() if k not in _SKIP_QS}
-        query = "&".join(f"{k}={v[0]}" for k,v in sorted(q.items()) if v)
-        # בלי fragment
-        p2 = p._replace(query=query, fragment="")
-        # סיום "/" מיותר
-        normalized = urlunparse(p2)
-        if normalized.endswith("/"):
-            normalized = normalized[:-1]
-        return normalized
-    except Exception:
-        return u or ""
-
-def url_key(u: str) -> str:
-    try:
-        n = normalize_url(u)
-        p = urlparse(n)
-        base = (p.netloc or "").lower()
-        path = (p.path or "").rstrip("/")
-        return f"{base}{path}"
-    except Exception:
-        return u or ""
-
-# ---------- Sources / ingest ----------
-def clean_html(html_text: str) -> str:
-    soup = BeautifulSoup(html_text or "", "html.parser")
-    for t in soup(["script", "style", "noscript"]):
-        t.extract()
-    txt = soup.get_text(" ", strip=True) or ""
-    return " ".join(txt.split())
-
-def fetch_text(url: str, timeout=12) -> str:
-    try:
-        r = requests.get(url, timeout=timeout, headers={"User-Agent": "DabunaBot/1.0"})
+        r = requests.get(url, timeout=timeout, headers={"User-Agent":"DABUNA/1.0"})
         if r.ok:
             return r.text
     except Exception:
-        pass
-    return ""
+        return None
+    return None
 
-def load_sources(whitelist_yaml: str):
-    try:
-        with open(whitelist_yaml, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
-    except FileNotFoundError:
-        return {"rss": ["https://www.ynet.co.il/Integration/StoryRss2.xml"],
-                "domains_official": ["ynet.co.il"]}
+# ---------------- Telegram ----------------
+class Telegram:
+    def __init__(self, token: str):
+        self.base = f"https://api.telegram.org/bot{token}"
 
-def translate_to_he(cfg, text: str) -> str:
-    if not text or is_hebrew(text):
+    def send_message(self, chat_id: str, text: str, disable_web_page_preview: bool=False, reply_markup: Optional[dict]=None):
+        data = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": disable_web_page_preview,
+        }
+        if reply_markup:
+            data["reply_markup"] = json.dumps(reply_markup, ensure_ascii=False)
+        r = requests.post(self.base+"/sendMessage", data=data, timeout=30)
+        r.raise_for_status()
+        return r.json()
+
+    def set_commands(self, commands: List[Tuple[str,str]]):
+        data = {"commands": json.dumps([{"command":c,"description":d} for c,d in commands], ensure_ascii=False)}
+        r = requests.post(self.base+"/setMyCommands", data=data, timeout=30)
+        r.raise_for_status()
+        return r.json()
+
+    def set_menu_button(self, text: str, url: str):
+        # Open link button in the menu (for MiniApp or channel link)
+        data = {"menu_button": json.dumps({"type":"web_app","text":text,"web_app":{"url":url}}, ensure_ascii=False)}
+        r = requests.post(self.base+"/setChatMenuButton", data=data, timeout=30)
+        r.raise_for_status()
+        return r.json()
+
+# ---------------- Translation ----------------
+def translate_chain(text: str, cfg: Dict[str,Any]) -> str:
+    chain = (cfg.get("translate") or {}).get("chain") or []
+    tgt = (cfg.get("translate") or {}).get("target_lang") or "he"
+    if not chain or not text.strip():
         return text
-    tcfg = cfg.get("translate", {})
-    if not tcfg.get("enabled", False):
-        return text
-    try:
-        r = requests.post(
-            tcfg.get("service_url", "https://translate.astian.org/translate"),
-            json={"q": text, "source": "auto", "target": "he", "format": "text"},
-            timeout=15,
-        )
-        if r.ok:
-            return r.json().get("translatedText", text)
-    except Exception:
-        pass
+    for step in chain:
+        t = step.get("type")
+        try:
+            if t == "libretranslate":
+                url = step["url"]
+                r = requests.post(url, timeout=25, data={
+                    "q": text, "source": "auto", "target": tgt, "format": "text"
+                })
+                if r.ok:
+                    js = r.json()
+                    if "translatedText" in js:
+                        return js["translatedText"]
+            elif t == "dummy":
+                return text  # no-op
+        except Exception:
+            continue
     return text
 
-def ingest_items(cfg) -> list[dict]:
-    whitelist_file = (cfg.get("sources") or {}).get("whitelist_file", "data/sources_whitelist.yaml")
-    src = load_sources(whitelist_file)
-    rss_list = src.get("rss", [])
-    items = []
-    for feed_url in rss_list:
-        try:
-            fp = feedparser.parse(feed_url)
-            for e in fp.entries[:40]:
-                url = e.get("link") or ""
-                title = e.get("title") or ""
-                summary = clean_html(e.get("summary", ""))
-                html_page = fetch_text(url)
-                text = clean_html(html_page) if html_page else summary
-                items.append({
-                    "url": normalize_url(url),  # normalized
-                    "title": title,
-                    "summary": summary,
-                    "text": text,
-                    "source": urlparse(url).netloc,
-                    "feed": feed_url
-                })
-        except Exception as ex:
-            print("RSS error:", feed_url, ex)
-    print(f"[DABUNA] fetched {len(items)} raw items")
+# ---------------- Fetch & Filter ----------------
+def fetch_items(cfg: Dict[str,Any]) -> List[Dict[str,Any]]:
+    items: List[Dict[str,Any]] = []
+    for src in (cfg.get("sources") or []):
+        url = src.get("url")
+        lang_hint = src.get("lang_hint","auto")
+        if not url:
+            continue
+        fp = feedparser.parse(url)
+        for e in fp.entries:
+            title = (e.get("title") or "").strip()
+            link = e.get("link") or ""
+            summary = BeautifulSoup((e.get("summary") or ""), "html.parser").get_text().strip()
+            published = e.get("published", "") or e.get("updated", "")
+            img = ""
+            # Try media:content
+            media = e.get("media_content") or e.get("media_thumbnail") or []
+            if isinstance(media, list) and media:
+                img = media[0].get("url","")
+            items.append({
+                "source": src.get("name",""),
+                "lang_hint": lang_hint,
+                "title": title,
+                "link": link,
+                "summary": summary,
+                "published": published,
+                "image": img,
+            })
     return items
 
-# ---------- Filtering, translation & anti-duplicates ----------
-def _tokens(s: str) -> set[str]:
-    s = (s or "").lower()
-    s = re.sub(r"[^a-z\u0590-\u05FF0-9 ]+", " ", s)
-    s = re.sub(r"\s+", " ", s).strip()
-    return set(s.split()) if s else set()
-
-def similar(a: str, b: str) -> float:
-    """
-    דמיון פשוט בין כותרות — Jaccard על טוקנים. 1.0 זה זהות מלאה.
-    """
-    A, B = _tokens(a), _tokens(b)
-    if not A or not B: return 0.0
-    inter = len(A & B); union = len(A | B)
-    return inter / max(1, union)
-
-def filter_and_translate(cfg, items: list[dict]) -> list[dict]:
+def apply_filters(items: List[Dict[str,Any]], cfg: Dict[str,Any]) -> List[Dict[str,Any]]:
+    fcfg = cfg.get("filters") or {}
+    min_len = int(fcfg.get("min_title_len", 0))
+    require_he = bool(fcfg.get("require_hebrew", False))
+    drops = set(fcfg.get("drop_keywords", []))
     out = []
-    min_title_len = int((cfg.get("filters") or {}).get("min_title_len", 16))
-    tcfg = cfg.get("translate", {})
-    translate_limit = int(tcfg.get("max_per_run", 0))
-    translated_count = 0
-
-    # זיכרון נגד כפילויות לפי כתובת/כותרת דומה
-    seen_keys = set()
-    kept_titles: list[str] = []
-
     for it in items:
-        title = (it.get("title") or "").strip()
-        summary = (it.get("summary") or "").strip()
-        text = (it.get("text") or "").strip()
-        url = it.get("url") or ""
-
-        if len(title) < min_title_len:
+        t = it["title"]
+        if len(t) < min_len:
             continue
-
-        # נגד כפילות URL
-        k = url_key(url)
-        if k in seen_keys:
+        low = t.lower()
+        if any(k.lower() in low for k in drops):
             continue
-
-        # נגד כפילות כותרות (כתבות דומות בין אתרים)
-        is_dup_title = False
-        for prev in kept_titles:
-            if similar(prev, title) >= 0.80:  # סף דמיון
-                is_dup_title = True
-                break
-        if is_dup_title:
+        if require_he and not is_hebrew(t):
             continue
-
-        # תרגום: אם לא עברית — תרגם (עד המגבלה)
-        if not (is_hebrew(title) or is_hebrew(summary) or is_hebrew(text)):
-            if tcfg.get("enabled", False) and translated_count < translate_limit:
-                title = translate_to_he(cfg, title[:240])
-                summary = translate_to_he(cfg, summary[:600])
-                translated_count += 1
-
-        it["title"] = title
-        it["summary"] = summary
-
         out.append(it)
-        seen_keys.add(k)
-        kept_titles.append(title)
-
-    print(f"[DABUNA] kept {len(out)} items (translated {translated_count})")
     return out
 
-# ---------- Post news ----------
-def post_news_items(cfg, token, items: list[dict]):
-    dest = (cfg.get("channels") or {}).get("news", "@DabunaNews")
-    web = cfg.get("web") or {}
-
-    storage_dir = cfg.get("storage_dir", "storage")
-    posted_path = os.path.join(storage_dir, "posted_urls.json")
-    posted = read_json(posted_path, {"keys": []})
-    keys_set = set(posted.get("keys", []))
-
-    pub = cfg.get("publish") or {}
-    sent = 0
-    max_per_run = int(pub.get("max_per_run", 10))
-    sleep_s = int(pub.get("sleep_seconds", 30))
-    allow_dups = bool(pub.get("allow_duplicates", False))
-
+# ---------------- Dedupe ----------------
+def dedupe_items(items: List[Dict[str,Any]], cfg: Dict[str,Any]) -> List[Dict[str,Any]]:
+    dc = cfg.get("dedupe") or {}
+    state_file = dc.get("state_file",".state.jsonl")
+    mem = load_state(state_file)
+    max_mem = int(dc.get("max_memory", 5000))
+    out = []
     for it in items:
-        if sent >= max_per_run:
-            break
-        k = url_key(it["url"])
-        if not allow_dups and k in keys_set:
+        key = sha1((it["title"]+"|"+it["link"]).strip())
+        if key in mem:
             continue
+        it["key"] = key
+        out.append(it)
+        mem[key] = {"key": key, "ts": int(time.time()), "title": it["title"], "link": it["link"]}
+    # trim memory
+    if len(mem) > max_mem:
+        # keep newest
+        mem_sorted = sorted(mem.values(), key=lambda x: x["ts"], reverse=True)[:max_mem]
+        mem = {x["key"]:x for x in mem_sorted}
+    save_state(state_file, mem)
+    return out
 
-        title = it["title"] or ""
-        summary = (it["summary"] or it["text"] or "")[:220]
-        source = it["source"]
+# ---------------- Rating ----------------
+def score_item(it: Dict[str,Any], cfg: Dict[str,Any]) -> int:
+    rcfg = cfg.get("rating") or {}
+    rules = rcfg.get("rules") or {}
+    base = int(rules.get("base", 50))
+    score = base
+    boosts = rules.get("boosts") or {}
+    penalties = rules.get("penalties") or {}
 
-        # UX: האשטגים בסיסיים
-        tags = "#דבונה #חדשות #ישראל #כנסת"
+    # heuristics
+    title = it["title"]
+    if len(title) >= 80:
+        score += int(boosts.get("long_title", 0))
+    if it.get("image"):
+        score += int(boosts.get("has_image", 0))
+    if is_hebrew(title):
+        score += int(boosts.get("hebrew", 0))
+    if domain_of(it.get("link","")) in set((cfg.get("rating") or {}).get("trusted_domains", [])):
+        score += int(boosts.get("local_source", 0))
 
-        msg = (
-            f"🗞️ <b>{safe(title)}</b>\n"
-            f"TL;DR: {safe(summary)}\n\n"
-            f"מקור: {safe(source)}\n"
-            f"🔗 {it['url']}\n"
-            f"{tags}"
-        )
-        buttons = [
-            [{"text": "📊 מדד", "url": web.get("dashboard_url", "")}],
-            [{"text": "🔗 שתפו", "url": web.get("share_url", "")}],
-        ]
-        try:
-            tg_send(token, dest, msg, buttons)
-            sent += 1
-            keys_set.add(k)
-            posted["keys"] = list(keys_set)
-            write_json(posted_path, posted)
-            time.sleep(sleep_s)
-        except Exception as ex:
-            print("post_news_items error:", ex)
+    if looks_clickbait(title):
+        score -= int(penalties.get("clickbait", 0))
+    if len(title) < 32:
+        score -= int(penalties.get("short_title", 0))
 
-    print(f"[DABUNA] posted {sent} news")
+    return max(0, min(100, score))
 
-# ---------- Index compute ----------
-def load_people(csv_path="data/politicians.csv"):
-    ppl = []
-    with open(csv_path, "r", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            aliases = [a.strip() for a in (row.get("aliases","") or "").split(";") if a.strip()]
-            # שם בעברית כ-name, aliases מכיל גם אנגלית וגם עברית
-            ppl.append({
-                "id": row["id"], "name": row["name"], "party": row["party"],
-                "role": row["role"], "aliases": [row["name"].strip(), *aliases]
-            })
-    return ppl
-
-DIGITS = re.compile(r"\d+")
-DATES  = re.compile(r"(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})")
-
-def specificity(text:str) -> float:
-    words = max(1, len((text or "").split()))
-    nums = len(DIGITS.findall(text or "")) + len(DATES.findall(text or ""))
-    return 100.0 * nums / (words/100.0)
-
-def mentions(text:str, person:dict) -> bool:
-    t = text or ""
-    return any(a and a in t for a in person["aliases"])
-
-def indep_domains(urls):
-    return len({urlparse(u).netloc.split(":")[0].lower() for u in urls if u})
-
-def score_transparency(primary_flags):
-    if not primary_flags: return 0.0
-    return 100.0 * sum(1 for b in primary_flags if b)/len(primary_flags)
-
-def score_fact_integrity(group, avg_spec):
-    if not group: return 0.0
-    indep = indep_domains([g["url"] for g in group])
-    base = 50.0 + min(40.0, (indep-1)*15.0)
-    bonus = min(15.0, avg_spec/10.0)
-    return min(100.0, base + bonus)
-
-def score_consistency(headlines):
-    if not headlines: return 0.0
-    toks = [set((h or "").split()) for h in headlines]
-    inter = set.intersection(*toks) if len(toks)>=2 else toks[0]
-    return max(40.0, min(100.0, 60.0 + len(inter)*10.0))
-
-def compute_rows(items: list[dict]) -> list[dict]:
-    people = load_people("data/politicians.csv")
-    for it in items:
-        it["specificity"] = specificity(it.get("text") or it.get("summary") or "")
-        it["is_primary"] = True
-
-    per = {}
-    for it in items:
-        txt = (it.get("title") or "") + " " + (it.get("summary") or "")
-        for p in people:
-            if mentions(txt, p):
-                per.setdefault(p["id"], {"person": p, "items": []})
-                per[p["id"]]["items"].append(it)
-
-    rows = []
-    for pid, data in per.items():
-        p = data["person"]; group = data["items"]
-        avg_spec = sum(it["specificity"] for it in group)/max(1,len(group))
-        headlines = [g.get("title","").strip() for g in group][:3]
-        Consistency = score_consistency(headlines)
-        FactIntegrity = score_fact_integrity(group, avg_spec)
-        Transparency = score_transparency([g.get("is_primary", False) for g in group])
-        Correction = 0.0
-        Index = 0.45*Consistency + 0.35*FactIntegrity + 0.10*Transparency + 0.10*Correction
-        rows.append({
-            "id": pid, "name": p["name"], "party": p["party"], "role": p["role"],
-            "Consistency": Consistency, "FactIntegrity": FactIntegrity,
-            "Transparency": Transparency, "CorrectionResponsiveness": Correction,
-            "IndexScore": Index, "headlines": headlines
-        })
-    rows.sort(key=lambda r: r["IndexScore"], reverse=True)
-    return rows
-
-def post_daily_index(cfg, token, rows: list[dict]):
-    if not rows: return
-    dest = (cfg.get("channels") or {}).get("rating", "@DabunaRating")
-    d = now_il().strftime("%d.%m.%Y")
-
-    lines = [f"📊 <b>מדד אמינות/עקביות – {d}</b>"]
-    for i, r in enumerate(rows[:10], 1):
-        lines.append(
-            f"{i}) <b>{safe(r['name'])}</b> — Index {r['IndexScore']:.0f}/100 "
-            f"(עק׳ {r['Consistency']:.0f} | אמ׳ {r['FactIntegrity']:.0f} | שק׳ {r['Transparency']:.0f})"
-        )
-    lines.append("#דבונה #מדד_דבונה #FactCheck #ישראל #כנסת")
-    buttons = [
-        [{"text": "📊 מדד", "url": (cfg.get('web') or {}).get('dashboard_url', '')}],
-        [{"text": "🔗 שתפו", "url": (cfg.get('web') or {}).get('share_url', '')}],
+# ---------------- Formatters ----------------
+def format_news(it: Dict[str,Any], idx: Optional[int]=None, translated: Optional[str]=None) -> str:
+    badge = f"#{idx} " if idx is not None else ""
+    title = safe(translated or it["title"])
+    src = safe(it["source"] or domain_of(it.get("link","")))
+    link = it.get("link","")
+    lines = [
+        f"<b>{badge}{title}</b>",
+        f"<i>{src}</i>",
     ]
-    tg_send(token, dest, "\n".join(lines), buttons)
+    if it.get("summary"):
+        lines.append(safe(it["summary"][:280]))
+    if link:
+        lines.append(f"\n{safe(link)}")
+    return "\n".join(lines).strip()
 
-# ---------- Commands ----------
-def cmd_daily(cfg, token):
-    items_all = ingest_items(cfg)
-    items = filter_and_translate(cfg, items_all)
+def format_rating(it: Dict[str,Any], score: int, translated: Optional[str]=None) -> str:
+    title = safe(translated or it["title"])
+    link = it.get("link","")
+    bar = "█" * (score//5)  # 0..20 blocks
+    return f"<b>{title}</b>\nמדד אמינות: <b>{score}/100</b>\n{bar}\n{safe(link)}"
 
-    storage_dir = cfg.get("storage_dir", "storage")
-    ensure_dir(storage_dir)
-    write_json(os.path.join(storage_dir, "latest.json"),
-               {"date": now_il().isoformat(), "rows": items})
+# ---------------- Pipeline ----------------
+def prepare(cfg: Dict[str,Any]) -> Tuple[List[Dict[str,Any]], List[Dict[str,Any]]]:
+    items = fetch_items(cfg)
+    items = apply_filters(items, cfg)
+    items = dedupe_items(items, cfg)
 
-    post_news_items(cfg, token, items)
+    # translate if needed
+    if (cfg.get("translate") or {}).get("enabled"):
+        tgt = (cfg.get("translate") or {}).get("target_lang","he")
+        out = []
+        for it in items:
+            if tgt == "he" and is_hebrew(it["title"]):
+                it["translated"] = it["title"]
+            else:
+                it["translated"] = translate_chain(it["title"], cfg)
+            out.append(it)
+        items = out
 
-    rows = compute_rows(items)
-    write_json(os.path.join(storage_dir, f"daily_scores_{now_il().date()}.json"), rows)
-    write_json(os.path.join(storage_dir, "latest_scores.json"),
-               {"date": now_il().isoformat(), "rows": rows})
-    print("[DABUNA] daily finished.")
+    # rating/score
+    rated = []
+    if (cfg.get("rating") or {}).get("enabled"):
+        for it in items:
+            it["score"] = score_item(it, cfg)
+            rated.append(it)
+        rated.sort(key=lambda x: x["score"], reverse=True)
+    else:
+        rated = items[:]
 
-def cmd_weekly(cfg, token):
-    storage_dir = cfg.get("storage_dir", "storage")
-    latest = read_json(os.path.join(storage_dir, "latest_scores.json"), {})
-    rows = latest.get("rows") or []
-    if not rows:
-        items_all = ingest_items(cfg)
-        items = filter_and_translate(cfg, items_all)
-        rows = compute_rows(items)
-    post_daily_index(cfg, token, rows)
-    print("[DABUNA] weekly index posted.")
+    return items, rated
 
-def cmd_miniapp(cfg, token):
-    """פרסום/ריענון מיניאפ: הודעה קצרה עם קישורי מדד/שיתוף"""
-    web = cfg.get("web") or {}
-    dest = (cfg.get("channels") or {}).get("news", "@DabunaNews")
-    msg = "🧩 <b>Dabuna Mini-App</b>\nעודכן בהצלחה. פתחו את המדד והדשבורד:"
-    buttons = [
-        [{"text": "📊 מדד", "url": web.get("dashboard_url", "")}],
-        [{"text": "🔗 שתפו", "url": web.get("share_url", "")}],
-    ]
-    tg_send(token, dest, msg, buttons)
-    print("[DABUNA] miniapp posted.")
+def publish_items(bot: Telegram, cfg: Dict[str,Any], items: List[Dict[str,Any]]):
+    p = cfg.get("publish") or {}
+    max_per = int(p.get("max_per_run", 10))
+    sleep_s = int(p.get("sleep_seconds", 1))
+    link_preview = bool(p.get("link_preview", True))
+    ch = (cfg.get("channels") or {}).get("news")
 
-def cmd_tick(cfg, token):
-    t = now_il()
-    hhmm = t.strftime("%H:%M"); weekday = t.weekday()
-    if hhmm == "18:00":
-        cmd_daily(cfg, token)
-    if weekday == 4 and hhmm == "14:00":
-        cmd_weekly(cfg, token)
-    print(f"[DABUNA] tick {hhmm} – nothing else to do.")
+    cnt = 0
+    for idx, it in enumerate(items, 1):
+        if cnt >= max_per:
+            break
+        txt = format_news(it, idx=idx, translated=it.get("translated"))
+        bot.send_message(ch, txt, disable_web_page_preview=(not link_preview))
+        cnt += 1
+        time.sleep(sleep_s)
 
-# ---------- main ----------
-if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("cmd", nargs="?", choices=["daily","weekly","tick","miniapp"], default="tick")
-    args = parser.parse_args()
+def publish_ratings(bot: Telegram, cfg: Dict[str,Any], rated: List[Dict[str,Any]]):
+    rc = (cfg.get("channels") or {}).get("rating")
+    p = cfg.get("publish") or {}
+    per_ch = (p.get("per_channel") or {}).get("rating", 4)
+    sleep_s = int(p.get("sleep_seconds", 1))
+    link_preview = bool(p.get("link_preview", True))
+    for it in rated[:per_ch]:
+        txt = format_rating(it, it.get("score", 0), translated=it.get("translated"))
+        bot.send_message(rc, txt, disable_web_page_preview=(not link_preview))
+        time.sleep(sleep_s)
 
-    cfg = load_cfg()
-    token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+# ---------------- Commands ----------------
+def cmd_daily(cfg: Dict[str,Any], token: str):
+    tz = cfg.get("timezone","Asia/Jerusalem")
+    bot = Telegram(token)
+    items, rated = prepare(cfg)
+    publish_items(bot, cfg, items)
+    publish_ratings(bot, cfg, rated)
+
+def cmd_weekly(cfg: Dict[str,Any], token: str):
+    # For demo: reuse the 'prepare' result and post a compact top-N
+    tz = cfg.get("timezone","Asia/Jerusalem")
+    bot = Telegram(token)
+    _, rated = prepare(cfg)
+    top_n = int((cfg.get("weekly") or {}).get("top_n", 10))
+    msg = ["<b>סיכום שבוע – טופ {}</b>".format(top_n)]
+    for i, it in enumerate(rated[:top_n], 1):
+        msg.append(f"{i}. {safe(it.get('translated') or it['title'])} ({it.get('score',0)}/100)")
+    bot.send_message((cfg.get("channels") or {}).get("rating"), "\n".join(msg))
+
+def cmd_tick(cfg: Dict[str,Any], token: str):
+    # Lightweight health check—fetch sources and do nothing else
+    items = fetch_items(cfg)
+    print(f"Tick OK, fetched {len(items)} items.")
+
+def cmd_miniapp(cfg: Dict[str,Any], token: str):
+    bot = Telegram(token)
+    title = (cfg.get("miniapp") or {}).get("title","DABUNA")
+    desc  = (cfg.get("miniapp") or {}).get("description","")
+    news_ch = (cfg.get("channels") or {}).get("news")
+    rating_ch = (cfg.get("channels") or {}).get("rating")
+    # Use menu button to point to news channel (or future webapp)
+    bot.set_commands([
+        ("start","Start"),
+        ("help","How to use DABUNA"),
+        ("menu","Open menu"),
+        ("ping","Health check"),
+        ("summary","Post weekly summary now"),
+    ])
+    bot.set_menu_button(text=title, url=f"https://t.me/{news_ch.lstrip('@')}")
+    # Also post a pinned message to news channel
+    text = f"<b>{safe(title)}</b>\n{safe(desc)}\n\n✳️ ערוץ חדשות: {safe(news_ch)}\n📊 ערוץ מדד: {safe(rating_ch)}"
+    bot.send_message(news_ch, text, disable_web_page_preview=True)
+
+# ---------------- Entrypoint ----------------
+def load_cfg() -> Dict[str,Any]:
+    return read_yaml("config.yaml")
+
+def main():
+    import sys
+    if len(sys.argv) < 2:
+        print("Usage: python run.py [daily|weekly|tick|miniapp]")
+        raise SystemExit(2)
+    cmd = sys.argv[1].strip()
+    token = os.environ.get("TELEGRAM_BOT_TOKEN","").strip()
     if not token:
         raise SystemExit("Missing TELEGRAM_BOT_TOKEN env")
+    cfg = load_cfg()
 
-    if args.cmd == "daily":
-        cmd_daily(cfg, token)
-    elif args.cmd == "weekly":
-        cmd_weekly(cfg, token)
-    elif args.cmd == "miniapp":
-        cmd_miniapp(cfg, token)
+    if   cmd == "daily":   cmd_daily(cfg, token)
+    elif cmd == "weekly":  cmd_weekly(cfg, token)
+    elif cmd == "tick":    cmd_tick(cfg, token)
+    elif cmd == "miniapp": cmd_miniapp(cfg, token)
     else:
-        cmd_tick(cfg, token)
+        raise SystemExit(f"Unknown command: {cmd}")
+
+if __name__ == "__main__":
+    main()
