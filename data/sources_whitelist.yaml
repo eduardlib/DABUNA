@@ -1,33 +1,29 @@
 rss:
   - https://www.ynet.co.il/Integration/StoryRss2.xml
-  - https://rss.walla.co.il/feed/22
-  - https://www.haaretz.co.il/cmlink/1.1471045
+  - https://rss.walla.co.il/feed/1
   - https://www.israelhayom.co.il/rss.xml
-  - https://www.maariv.co.il/Rss/RssCh/Staging/1.xml
+  - https://www.haaretz.co.il/cmlink/1.1460839
+  - https://www.maariv.co.il/Rss/RssChadashot
   - https://www.globes.co.il/webservice/rss/rssfeeder.asmx/FeederNode?iID=2
-  - https://www.calcalist.co.il/home/rss/0,7340,L-8,00.xml
-  - https://www.themarker.com/cmlink/1.1473469
-  - https://www.srugim.co.il/feed
-  - https://www.kan.org.il/Rss/Rss.aspx?pid=Open
-  - https://www.mako.co.il/rss/News-Israel.xml
-  - https://13news.co.il/feed/
-  - https://www.i24news.tv/rss/il.xml
-  - https://www.jpost.com/rss/rssfeedsheadlines.aspx
+  - https://www.calcalist.co.il/home/0,7340,L-8,00.xml
+  - https://www.themarker.com/cmlink/1.147
+  - https://www.mako.co.il/rss/news-summaries.xml
+  - https://www.kan.org.il/Rss/Rss.aspx?unitId=2
+  - https://www.ynet.co.il/Integration/StoryRss1854.xml
+  - https://www.jpost.com/Rss/RssFeedsHeadlines.aspx
   - https://www.timesofisrael.com/feed/
-  - https://feeds.reuters.com/reuters/Israel
-  - https://apnews.com/apf-middleeast?output=atom
+  - https://feeds.reuters.com/reuters/ILtopNews
+  - https://apnews.com/hub/ap-top-news?utm_source=apnews.com&utm_medium=referral&utm_campaign=rss
 domains_official:
   - ynet.co.il
   - walla.co.il
   - haaretz.co.il
   - israelhayom.co.il
-  - maariv.co.il
+  - mako.co.il
+  - kan.org.il
   - globes.co.il
   - calcalist.co.il
   - themarker.com
-  - kan.org.il
-  - mako.co.il
-  - 13news.co.il
   - jpost.com
   - timesofisrael.com
   - reuters.com
